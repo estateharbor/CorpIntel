@@ -4,27 +4,27 @@
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - models, db+indexes, all routers, services, access control (VERIFIED via curl)",
+    "content": "Phase 2: Backend - all routers, services, access control (VERIFIED via curl)",
     "status": "completed"
   },
   {
     "content": "Get design guidelines from design_agent",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Frontend - all 9 pages, components, charts, api client, dark mode, sample-data banner, auth (RENDERING VERIFIED via screenshots)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: End-to-end testing via testing_agent_v3 (backend + frontend)",
     "status": "in_progress"
   },
   {
-    "content": "Phase 2: Frontend - all 9 pages, components, charts, api client, React Query, dark mode, sample-data banner, auth",
+    "content": "Phase 2: Fix any issues found in testing",
     "status": "pending"
   },
   {
-    "content": "Phase 2: Verify all features wired backend<->frontend",
-    "status": "pending"
-  },
-  {
-    "content": "Phase 2: End-to-end testing via testing_agent_v3",
-    "status": "pending"
-  },
-  {
-    "content": "Phase 3: Stripe subscriptions polish + access-control enforcement testing",
+    "content": "Phase 3: Stripe subscriptions + access-control enforcement verification",
     "status": "pending"
   },
   {

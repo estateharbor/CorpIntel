@@ -4,72 +4,130 @@
 
 body {
     margin: 0;
-    font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-        "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-        sans-serif;
+    font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
 
-code {
-    font-family:
-        source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+code,
+.font-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
 }
 
 @layer base {
     :root {
-        --background: 0 0% 100%;
-        --foreground: 0 0% 3.9%;
+        --background: 210 40% 98%;
+        --foreground: 215 28% 17%;
         --card: 0 0% 100%;
-        --card-foreground: 0 0% 3.9%;
+        --card-foreground: 215 28% 17%;
         --popover: 0 0% 100%;
-        --popover-foreground: 0 0% 3.9%;
-        --primary: 0 0% 9%;
-        --primary-foreground: 0 0% 98%;
-        --secondary: 0 0% 96.1%;
-        --secondary-foreground: 0 0% 9%;
-        --muted: 0 0% 96.1%;
-        --muted-foreground: 0 0% 45.1%;
-        --accent: 0 0% 96.1%;
-        --accent-foreground: 0 0% 9%;
-        --destructive: 0 84.2% 60.2%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 89.8%;
-        --input: 0 0% 89.8%;
-        --ring: 0 0% 3.9%;
-        --chart-1: 12 76% 61%;
-        --chart-2: 173 58% 39%;
-        --chart-3: 197 37% 24%;
-        --chart-4: 43 74% 66%;
-        --chart-5: 27 87% 67%;
-        --radius: 0.5rem;
+        --popover-foreground: 215 28% 17%;
+
+        --primary: 214 52% 25%;
+        --primary-foreground: 210 40% 98%;
+
+        --secondary: 210 30% 96%;
+        --secondary-foreground: 214 52% 25%;
+
+        --muted: 210 30% 96%;
+        --muted-foreground: 215 16% 46%;
+
+        --accent: 38 90% 54%;
+        --accent-foreground: 214 60% 14%;
+
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 210 40% 98%;
+
+        --border: 214 20% 88%;
+        --input: 214 20% 88%;
+        --ring: 38 90% 54%;
+        --radius: 0.75rem;
+
+        --chart-1: 214 52% 25%;
+        --chart-2: 38 90% 54%;
+        --chart-3: 199 78% 38%;
+        --chart-4: 152 55% 36%;
+        --chart-5: 0 72% 51%;
+
+        --success: 152 55% 36%;
+        --warning: 38 90% 54%;
+        --info: 199 78% 38%;
+        --danger: 0 72% 51%;
+        --status-active-bg: 152 55% 92%;
+        --status-active-fg: 152 55% 26%;
+        --status-struck-bg: 0 72% 95%;
+        --status-struck-fg: 0 72% 40%;
+        --status-liq-bg: 38 90% 90%;
+        --status-liq-fg: 38 90% 30%;
+
+        --surface-2: 210 30% 96%;
+        --surface-3: 214 25% 92%;
+        --sidebar: 214 52% 16%;
+        --sidebar-foreground: 210 40% 96%;
+        --sidebar-muted: 214 35% 26%;
+        --topbar: 0 0% 100%;
+        --topbar-foreground: 215 28% 17%;
+        --gridline: 214 20% 88%;
+        --chip: 210 30% 96%;
+        --chip-foreground: 214 52% 25%;
     }
+
     .dark {
-        --background: 0 0% 3.9%;
-        --foreground: 0 0% 98%;
-        --card: 0 0% 3.9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 0 0% 3.9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 0 0% 98%;
-        --primary-foreground: 0 0% 9%;
-        --secondary: 0 0% 14.9%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 0 0% 14.9%;
-        --muted-foreground: 0 0% 63.9%;
-        --accent: 0 0% 14.9%;
-        --accent-foreground: 0 0% 98%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 14.9%;
-        --input: 0 0% 14.9%;
-        --ring: 0 0% 83.1%;
-        --chart-1: 220 70% 50%;
-        --chart-2: 160 60% 45%;
-        --chart-3: 30 80% 55%;
-        --chart-4: 280 65% 60%;
-        --chart-5: 340 75% 55%;
+        --background: 214 55% 10%;
+        --foreground: 210 40% 96%;
+        --card: 214 50% 12%;
+        --card-foreground: 210 40% 96%;
+        --popover: 214 50% 12%;
+        --popover-foreground: 210 40% 96%;
+
+        --primary: 210 40% 96%;
+        --primary-foreground: 214 60% 12%;
+
+        --secondary: 214 35% 16%;
+        --secondary-foreground: 210 40% 96%;
+
+        --muted: 214 35% 16%;
+        --muted-foreground: 215 18% 70%;
+
+        --accent: 38 90% 54%;
+        --accent-foreground: 214 60% 12%;
+
+        --destructive: 0 62% 42%;
+        --destructive-foreground: 210 40% 96%;
+
+        --border: 214 28% 20%;
+        --input: 214 28% 20%;
+        --ring: 38 90% 54%;
+        --radius: 0.75rem;
+
+        --chart-1: 210 40% 96%;
+        --chart-2: 38 90% 54%;
+        --chart-3: 199 78% 55%;
+        --chart-4: 152 55% 50%;
+        --chart-5: 0 62% 55%;
+
+        --success: 152 55% 50%;
+        --warning: 38 90% 54%;
+        --info: 199 78% 55%;
+        --danger: 0 62% 55%;
+        --status-active-bg: 152 55% 16%;
+        --status-active-fg: 152 55% 72%;
+        --status-struck-bg: 0 62% 18%;
+        --status-struck-fg: 0 62% 75%;
+        --status-liq-bg: 38 90% 16%;
+        --status-liq-fg: 38 90% 70%;
+
+        --surface-2: 214 35% 16%;
+        --surface-3: 214 28% 20%;
+        --sidebar: 214 55% 8%;
+        --sidebar-foreground: 210 40% 96%;
+        --sidebar-muted: 214 35% 18%;
+        --topbar: 214 50% 12%;
+        --topbar-foreground: 210 40% 96%;
+        --gridline: 214 28% 20%;
+        --chip: 214 35% 16%;
+        --chip-foreground: 210 40% 96%;
     }
 }
 
@@ -80,36 +138,11 @@ code {
     body {
         @apply bg-background text-foreground;
     }
-}
-
-@layer base {
-    [data-debug-wrapper="true"] {
-        display: contents !important;
-    }
-
-    [data-debug-wrapper="true"] > * {
-        margin-left: inherit;
-        margin-right: inherit;
-        margin-top: inherit;
-        margin-bottom: inherit;
-        padding-left: inherit;
-        padding-right: inherit;
-        padding-top: inherit;
-        padding-bottom: inherit;
-        column-gap: inherit;
-        row-gap: inherit;
-        gap: inherit;
-        border-left-width: inherit;
-        border-right-width: inherit;
-        border-top-width: inherit;
-        border-bottom-width: inherit;
-        border-left-style: inherit;
-        border-right-style: inherit;
-        border-top-style: inherit;
-        border-bottom-style: inherit;
-        border-left-color: inherit;
-        border-right-color: inherit;
-        border-top-color: inherit;
-        border-bottom-color: inherit;
+    h1, h2, h3, h4, h5, h6 {
+        font-family: "Sora", ui-sans-serif, system-ui, sans-serif;
     }
 }
+
+.thin-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 999px; }
+.thin-scroll::-webkit-scrollbar-track { background: transparent; }
