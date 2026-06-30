@@ -42,7 +42,7 @@ class UserPublic(BaseModel):
     created_at: Optional[datetime] = None
 
 
-# ---------------- Companies ----------------
+# ---------------- Companies / LLPs (entities) ----------------
 class Director(BaseModel):
     din: str
     name: str
@@ -52,8 +52,22 @@ class Director(BaseModel):
     is_active: bool = True
 
 
+class Partner(BaseModel):
+    """LLP designated partner (parallel to Director for Companies)."""
+    dpin: str
+    name: str
+    llpin: str
+    designation: str = "Designated Partner"
+    date_of_appointment: Optional[datetime] = None
+    is_active: bool = True
+
+
 class CompanySummary(BaseModel):
-    cin: str
+    cin: Optional[str] = None
+    # Generic entity identity (Company -> CIN, LLP -> LLPIN)
+    identifier: Optional[str] = None
+    identifier_type: Optional[str] = None  # "CIN" | "LLPIN"
+    entity_type: str = "Company"           # "Company" | "LLP"
     name: str
     status: str
     company_class: Optional[str] = None
@@ -64,12 +78,14 @@ class CompanySummary(BaseModel):
     date_of_incorporation: Optional[datetime] = None
     paid_up_capital: float = 0
     authorized_capital: float = 0
+    total_contribution: Optional[float] = None  # LLP-specific
     director_count: int = 0
     data_quality_score: int = 0
     enriched: bool = False
 
 
 class CompanyDetail(CompanySummary):
+    llpin: Optional[str] = None
     category: Optional[str] = None
     principal_activity: Optional[str] = None
     b2b_or_b2c: Optional[str] = None
@@ -80,6 +96,26 @@ class CompanyDetail(CompanySummary):
     data_source: Optional[str] = None
     interesting_flag: Optional[bool] = None
     interesting_reason: Optional[str] = None
+
+
+# ---------------- CSV upload ----------------
+class RejectedRow(BaseModel):
+    row_number: int
+    identifier: Optional[str] = None
+    reason: str
+
+
+class UploadSummary(BaseModel):
+    ok: bool = True
+    total_rows: int = 0
+    processed: int = 0
+    companies_inserted: int = 0
+    companies_updated: int = 0
+    llps_inserted: int = 0
+    llps_updated: int = 0
+    rejected_count: int = 0
+    rejected_rows: List[RejectedRow] = Field(default_factory=list)
+    message: Optional[str] = None
 
 
 class PaginatedCompanies(BaseModel):

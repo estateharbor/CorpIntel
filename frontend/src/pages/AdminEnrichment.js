@@ -1,6 +1,5 @@
 import React from "react";
-import { useQuery } from "@tanstack/react-query";
-import {
+import { useQuery } from "@tanstack/react-query";import {
   Database, ShieldCheck, Clock, Copy, Terminal, RefreshCw, AlertTriangle,
   CheckCircle2, Cookie, ListChecks, Activity, Ban, CircleSlash, Hourglass,
 } from "lucide-react";
@@ -14,6 +13,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { KpiSkeleton, ChartSkeleton } from "@/components/Skeletons";
+import { DataUploadCard } from "@/components/admin/DataUploadCard";
 import { getEnrichmentProgress } from "@/lib/api";
 import { formatNumber, formatDate } from "@/lib/format";
 import { ADMIN_ENRICHMENT as T } from "@/constants/testIds";
@@ -190,6 +190,9 @@ export default function AdminEnrichment() {
           Could not load enrichment progress. Please refresh.
         </Card>
       )}
+
+      {/* Data upload (Companies & LLPs) */}
+      <DataUploadCard onUploaded={() => refetch()} />
 
       {/* Hard-stop banner */}
       {showStopBanner && stopMeta && (

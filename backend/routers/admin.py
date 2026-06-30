@@ -5,7 +5,7 @@ import math
 from datetime import datetime, timedelta, timezone
 
 import pytz
-from fastapi import APIRouter
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from db import db
 from services.enrichment import enrich_company
@@ -49,6 +49,25 @@ async def ingest_seed(count: int = 600):
         return {"mode": "sample (data.gov.in failed)", "datagov_error": res.get("message"), **sample}
     res = await seed_from_sample(db, count=count)
     return {"mode": "sample", **res}
+
+
+@router.post("/upload-csv")
+async def upload_csv(file: UploadFile = File(...)):
+    """Bulk-import Companies and LLPs from a CSV file.
+
+    Flexible header mapping; validates each row as CIN (Company) or LLPIN (LLP);
+    upserts by the generic identifier and returns an entity-type breakdown.
+    """
+    name = (file.filename or "").lower()
+    if not (name.endswith(".csv") or (file.content_type or "").startswith("text")):
+        raise HTTPException(status_code=400, detail="Please upload a .csv file")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 25 MB)")
+    from services.csv_upload import process_upload
+    return await process_upload(db, content)
 
 
 @router.post("/ingest/incremental")

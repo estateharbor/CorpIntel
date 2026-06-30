@@ -1,0 +1,261 @@
+"""CSV upload service — bulk import of Companies AND LLPs.
+
+Flexible, defensive CSV parser used by the Admin "Data Upload" feature. It:
+  * accepts common header variants (alias-mapped, case/space-insensitive)
+  * validates each row's identifier as a CIN (Company) or LLPIN (LLP)
+  * upserts by the generic `identifier` (CIN or LLPIN), backward compatible
+    with all existing code that queries by `cin`
+  * maps LLP `total_contribution` -> `paid_up_capital` for filtering
+    consistency while preserving the original under `total_contribution`
+  * preserves enrichment/classification state across re-uploads
+    (via $setOnInsert) and returns an entity-type breakdown summary
+
+Genuinely malformed rows (identifier is neither a valid CIN nor LLPIN, or no
+name) are rejected and reported back to the operator.
+"""
+from __future__ import annotations
+
+import csv
+import io
+import logging
+import re
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
+from services.city_tagger import extract_area, extract_pin, tag_city
+
+logger = logging.getLogger("corpintel.csv_upload")
+
+# Official-style identifier patterns (provided by product spec).
+CIN_PATTERN = re.compile(r"^[UL][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$")
+LLPIN_PATTERN = re.compile(r"^[A-Z]{3}-[0-9]{4}$")
+
+# --- Flexible header aliases (normalised: lowercased, non-alnum -> "_") ------
+_COLUMN_ALIASES: Dict[str, List[str]] = {
+    "identifier": ["identifier", "cin_llpin", "cin/llpin", "registration_number",
+                   "reg_no", "id"],
+    "cin": ["cin", "corporate_identification_number", "company_cin"],
+    "llpin": ["llpin", "llp_identification_number", "llp_in"],
+    "name": ["name", "company_name", "companyname", "name_of_company",
+             "llp_name", "entity_name"],
+    "entity_type": ["entity_type", "type", "entitytype"],
+    "status": ["status", "company_status", "llp_status", "companystatus"],
+    "company_class": ["company_class", "class", "companyclass"],
+    "category": ["category", "company_category"],
+    "date_of_incorporation": ["date_of_incorporation", "date_of_registration",
+                              "registration_date", "incorporation_date",
+                              "doi", "dateofregistration"],
+    "principal_activity": ["principal_activity", "principal_business_activity",
+                           "nic_code", "activity", "business_activity"],
+    "authorized_capital": ["authorized_capital", "authorised_capital",
+                           "authorized_cap"],
+    "paid_up_capital": ["paid_up_capital", "paidup_capital", "paidupcapital"],
+    "total_contribution": ["total_contribution", "contribution",
+                           "total_obligation_of_contribution",
+                           "obligation_of_contribution"],
+    "roc": ["roc", "registrar_of_companies", "roc_code"],
+    "address": ["address", "registered_office_address", "registered_office",
+                "company_registered_office_address", "registered_address"],
+    "city": ["city", "company_city"],
+    "pin_code": ["pin_code", "pincode", "pin", "postal_code"],
+    "registered_state": ["registered_state", "state", "company_state"],
+}
+
+
+def _norm_key(key: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (key or "").strip().lower()).strip("_")
+
+
+def validate_identifier(value: str) -> dict:
+    """Classify an identifier string as CIN (Company) or LLPIN (LLP)."""
+    if value is None:
+        return {"valid": False, "type": None, "entity_type": None, "value": None}
+    value = str(value).strip().upper()
+    if CIN_PATTERN.match(value):
+        return {"valid": True, "type": "CIN", "entity_type": "Company", "value": value}
+    if LLPIN_PATTERN.match(value):
+        return {"valid": True, "type": "LLPIN", "entity_type": "LLP", "value": value}
+    return {"valid": False, "type": None, "entity_type": None, "value": value}
+
+
+def _first(norm_row: dict, field: str) -> Optional[str]:
+    for alias in _COLUMN_ALIASES.get(field, [field]):
+        v = norm_row.get(alias)
+        if v not in (None, "", "NA", "N/A", "-"):
+            return str(v).strip()
+    return None
+
+
+def _parse_date(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%b-%Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(value[:11].strip(), fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _to_float(value: Optional[str]) -> float:
+    if value is None:
+        return 0.0
+    try:
+        return float(re.sub(r"[^0-9.\-]", "", str(value)) or 0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _decode(file_bytes: bytes) -> str:
+    for enc in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            return file_bytes.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return file_bytes.decode("utf-8", errors="ignore")
+
+
+def _build_entity(norm_row: dict, ident: dict) -> dict:
+    """Construct the descriptive ($set) part of a company/LLP document."""
+    entity_type = ident["entity_type"]
+    identifier = ident["value"]
+    address = _first(norm_row, "address") or ""
+    city = _first(norm_row, "city") or tag_city(address) or None
+    pin = _first(norm_row, "pin_code") or extract_pin(address)
+
+    paid = _to_float(_first(norm_row, "paid_up_capital"))
+    contribution = _to_float(_first(norm_row, "total_contribution"))
+
+    doc = {
+        "identifier": identifier,
+        "identifier_type": ident["type"],
+        "entity_type": entity_type,
+        "name": _first(norm_row, "name"),
+        "status": _first(norm_row, "status") or "Active",
+        "company_class": _first(norm_row, "company_class"),
+        "category": _first(norm_row, "category"),
+        "date_of_incorporation": _parse_date(_first(norm_row, "date_of_incorporation")),
+        "principal_activity": _first(norm_row, "principal_activity") or "",
+        "authorized_capital": _to_float(_first(norm_row, "authorized_capital")),
+        "roc": _first(norm_row, "roc") or "RoC-Mumbai",
+        "address": address,
+        "city": city,
+        "pin_code": pin,
+        "area": extract_area(address),
+        "registered_state": _first(norm_row, "registered_state") or "Maharashtra",
+        "last_updated": datetime.now(timezone.utc),
+        "data_source": "csv_upload",
+    }
+
+    if entity_type == "LLP":
+        # LLPs have no paid-up capital; map contribution -> paid_up_capital for
+        # filtering consistency, keep the original under total_contribution.
+        total_contribution = contribution or paid
+        doc["total_contribution"] = total_contribution
+        doc["paid_up_capital"] = total_contribution
+        doc["llpin"] = identifier
+        doc["cin"] = None
+        if not doc["company_class"]:
+            doc["company_class"] = "LLP"
+    else:
+        doc["paid_up_capital"] = paid
+        doc["total_contribution"] = None
+        doc["cin"] = identifier
+        if not doc["company_class"]:
+            doc["company_class"] = "Private"
+        if not doc["category"]:
+            doc["category"] = "Company limited by Shares"
+
+    return doc
+
+
+async def process_upload(db, file_bytes: bytes) -> dict:
+    """Parse CSV bytes, upsert entities, return an entity-type breakdown."""
+    text = _decode(file_bytes)
+    try:
+        reader = csv.DictReader(io.StringIO(text))
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "message": f"Could not parse CSV: {e}",
+                "total_rows": 0, "processed": 0,
+                "companies_inserted": 0, "companies_updated": 0,
+                "llps_inserted": 0, "llps_updated": 0,
+                "rejected_count": 0, "rejected_rows": []}
+
+    if not reader.fieldnames:
+        return {"ok": False, "message": "CSV has no header row.",
+                "total_rows": 0, "processed": 0,
+                "companies_inserted": 0, "companies_updated": 0,
+                "llps_inserted": 0, "llps_updated": 0,
+                "rejected_count": 0, "rejected_rows": []}
+
+    summary = {
+        "ok": True, "total_rows": 0, "processed": 0,
+        "companies_inserted": 0, "companies_updated": 0,
+        "llps_inserted": 0, "llps_updated": 0,
+        "rejected_count": 0, "rejected_rows": [],
+    }
+    now = datetime.now(timezone.utc)
+
+    for i, raw in enumerate(reader, start=2):  # row 1 is the header
+        summary["total_rows"] += 1
+        norm = {_norm_key(k): (v.strip() if isinstance(v, str) else v)
+                for k, v in raw.items() if k is not None}
+
+        raw_ident = (_first(norm, "identifier") or _first(norm, "cin")
+                     or _first(norm, "llpin"))
+        ident = validate_identifier(raw_ident)
+        name = _first(norm, "name")
+
+        if not ident["valid"]:
+            summary["rejected_count"] += 1
+            if len(summary["rejected_rows"]) < 50:
+                summary["rejected_rows"].append({
+                    "row_number": i, "identifier": raw_ident,
+                    "reason": "Identifier is neither a valid CIN nor LLPIN"})
+            continue
+        if not name:
+            summary["rejected_count"] += 1
+            if len(summary["rejected_rows"]) < 50:
+                summary["rejected_rows"].append({
+                    "row_number": i, "identifier": ident["value"],
+                    "reason": "Missing required field: name"})
+            continue
+
+        doc = _build_entity(norm, ident)
+        set_on_insert = {
+            "enriched": False,
+            "enrichment_attempted": False,
+            "classified": False,
+            "data_quality_score": 0,
+            "sector": None,
+            "sub_sector": None,
+            "created_at": now,
+        }
+        try:
+            res = await db.companies.update_one(
+                {"identifier": ident["value"]},
+                {"$set": doc, "$setOnInsert": set_on_insert},
+                upsert=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            summary["rejected_count"] += 1
+            if len(summary["rejected_rows"]) < 50:
+                summary["rejected_rows"].append({
+                    "row_number": i, "identifier": ident["value"],
+                    "reason": f"DB error: {e}"})
+            continue
+
+        summary["processed"] += 1
+        inserted = res.upserted_id is not None
+        if ident["entity_type"] == "LLP":
+            summary["llps_inserted" if inserted else "llps_updated"] += 1
+        else:
+            summary["companies_inserted" if inserted else "companies_updated"] += 1
+
+    total_new = summary["companies_inserted"] + summary["llps_inserted"]
+    total_upd = summary["companies_updated"] + summary["llps_updated"]
+    summary["message"] = (
+        f"Processed {summary['processed']} rows: {total_new} inserted, "
+        f"{total_upd} updated, {summary['rejected_count']} rejected.")
+    logger.info("[csv_upload] %s", summary["message"])
+    return summary

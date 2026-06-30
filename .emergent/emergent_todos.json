@@ -1,38 +1,38 @@
 [
   {
-    "content": "Backend: Add GET /admin/enrichment-progress endpoint in admin.py",
+    "content": "Backend models.py: add Partner model + entity fields",
     "status": "completed"
   },
   {
-    "content": "Backend: Disable auto MCA enrichment in scheduler.py enrichment_worker (keep classification only)",
+    "content": "Backend ingestion.py ensure_indexes: backfill migration + partial-unique cin + identifier/entity_type/partners indexes",
     "status": "completed"
   },
   {
-    "content": "Backend: Restart & verify endpoint + scheduler via curl",
+    "content": "Backend services/csv_upload.py: flexible parser + dual validation + upsert + summary",
     "status": "completed"
   },
   {
-    "content": "Frontend: Add getEnrichmentProgress() helper in api.js",
+    "content": "Backend admin.py: POST /admin/upload-csv endpoint",
     "status": "completed"
   },
   {
-    "content": "Frontend: Build AdminEnrichment.js page",
+    "content": "Backend: restart + curl test upload + verify indexes/backfill",
     "status": "completed"
   },
   {
-    "content": "Frontend: Wire route in App.js + nav item in nav.js + testIds constants",
+    "content": "Frontend api.js: uploadCsv(file) helper (multipart)",
     "status": "completed"
   },
   {
-    "content": "Frontend: esbuild check + screenshot verification",
+    "content": "Frontend AdminEnrichment: Data Upload card (dropzone, upload, summary, template download) + testIds",
     "status": "completed"
   },
   {
-    "content": "Test: Run Python session scripts via terminal to verify guardrail STOP messages (no cookie, daily cap, min-gap)",
+    "content": "Frontend: esbuild check + screenshot verify upload card",
     "status": "completed"
   },
   {
-    "content": "Test: Run testing_agent_v3 for backend+frontend validation; fix reported bugs",
-    "status": "completed"
+    "content": "Test: testing_agent_v3 for CSV upload (backend) + admin upload card (frontend); fix bugs",
+    "status": "in_progress"
   }
 ]

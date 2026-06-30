@@ -17,3 +17,14 @@ export const ADMIN_ENRICHMENT = {
   instructionPanel: 'admin-enrichment-instruction-panel',
   recentSessionsTable: 'admin-enrichment-recent-sessions-table',
 };
+
+export const DATA_UPLOAD = {
+  card: 'data-upload-card',
+  dropzone: 'data-upload-dropzone',
+  fileInput: 'data-upload-file-input',
+  submitButton: 'data-upload-submit-button',
+  templateButton: 'data-upload-template-button',
+  clearButton: 'data-upload-clear-button',
+  result: 'data-upload-result',
+  rejectedList: 'data-upload-rejected-list',
+};

@@ -154,8 +154,45 @@ class DataGovInClient:
 
 
 async def ensure_indexes(db) -> None:
-    """Create all required MongoDB indexes (idempotent)."""
-    await db.companies.create_index("cin", unique=True)
+    """Create all required MongoDB indexes (idempotent) + entity migration.
+
+    Backward-compatible LLP support: legacy company docs are backfilled with
+    entity_type/identifier/identifier_type so the unique `cin` index can be
+    converted to a PARTIAL unique index (Companies only). LLP docs carry
+    cin=null and are keyed by the generic `identifier` (LLPIN) instead.
+    """
+    # --- Migration: backfill entity fields on legacy company docs (idempotent) ---
+    await db.companies.update_many(
+        {"identifier": {"$exists": False}},
+        [{"$set": {
+            "identifier": "$cin",
+            "identifier_type": "CIN",
+            "entity_type": "Company",
+        }}],
+    )
+
+    # --- Convert legacy `cin_1` unique index -> partial-unique (Company only) ---
+    try:
+        info = await db.companies.index_information()
+    except Exception:  # noqa: BLE001
+        info = {}
+    cin_idx = info.get("cin_1")
+    if cin_idx is not None and "partialFilterExpression" not in cin_idx:
+        try:
+            await db.companies.drop_index("cin_1")
+            cin_idx = None
+        except Exception as e:  # noqa: BLE001
+            logger.warning("could not drop legacy cin index: %s", e)
+    if cin_idx is None:
+        await db.companies.create_index(
+            "cin", unique=True, name="cin_1",
+            partialFilterExpression={"entity_type": "Company"})
+
+    # --- Generic entity identifier is the new primary unique key ---
+    await db.companies.create_index("identifier", unique=True)
+    await db.companies.create_index("entity_type")
+    await db.companies.create_index("llpin", sparse=True)
+
     await db.companies.create_index("city")
     await db.companies.create_index("sector")
     await db.companies.create_index("status")
@@ -165,11 +202,14 @@ async def ensure_indexes(db) -> None:
                                     name="company_text_idx")
     await db.directors.create_index("din", unique=True)
     await db.directors.create_index("cin")
+    # LLP designated partners (parallel to directors)
+    await db.partners.create_index("dpin", unique=True)
+    await db.partners.create_index("llpin")
     await db.enrichment.create_index("cin", unique=True)
     await db.users.create_index("email", unique=True)
     await db.user_sessions.create_index("session_token")
     await db.alerts_log.create_index("cin")
-    logger.info("MongoDB indexes ensured.")
+    logger.info("MongoDB indexes ensured (entity-aware: Companies + LLPs).")
 
 
 async def upsert_companies(db, companies: List[dict]) -> Dict[str, int]:

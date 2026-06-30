@@ -56,6 +56,14 @@ export const getEnrichmentProgress = () =>
   api.get("/admin/enrichment-progress").then((r) => r.data);
 export const triggerSeed = () => api.post("/admin/ingest/seed").then((r) => r.data);
 
+export const uploadCsv = (file) => {
+  const form = new FormData();
+  form.append("file", file);
+  return api
+    .post("/admin/upload-csv", form, { headers: { "Content-Type": "multipart/form-data" } })
+    .then((r) => r.data);
+};
+
 export const getPlans = () => api.get("/payments/plans").then((r) => r.data);
 export const createCheckout = (plan_id) =>
   api.post("/payments/checkout", { plan_id, origin_url: window.location.origin }).then((r) => r.data);
