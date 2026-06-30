@@ -4,7 +4,9 @@
 - Deliver a **manual, resumable, session-aware** MCA enrichment runner that **never auto-loops** and enforces guardrails (**3 sessions/day**, **≥3h gap**, **≤110m budget**, circuit breakers for **CAPTCHA/session expiry**).
 - Provide an **Admin Enrichment Dashboard** to monitor queue progress and guide the operator with **copy/paste terminal commands**.
 - Ensure **all background/scheduled MCA enrichment is disabled** (prevents bans and preserves queue accuracy). Background jobs may continue for **classification only**.
-- Extend the platform to support **LLPs alongside Companies** via a generic identifier model (CIN/LLPIN), starting with **Phase 1: CSV upload + entity schema**.
+- Extend the platform to support **LLPs alongside Companies** via a generic identifier model (CIN/LLPIN), including:
+  - **Phase 1**: CSV upload + entity schema
+  - **Phase 2**: entity-aware search, detail pages (partners), analytics, and enrichment plumbing
 - Provide a **production-safe, memory-safe, timeout-safe** CSV upload pipeline that supports **large master-data CSVs (3–5 lakh rows)** without **Cloudflare/origin timeouts** or **pod OOM**.
 - Maintain backward compatibility: existing “company” flows that query by `cin` continue to work for Company docs.
 
@@ -13,11 +15,11 @@
 - ✅ **Admin Enrichment Dashboard**: complete, tested.
 - ✅ **Auto MCA enrichment disabled** in APScheduler: complete, verified.
 - ✅ **LLP Support — Phase 1 (CSV upload + entity data model)**: complete, tested.
-- ✅ **Sample data fully removed + auto-reseed disabled**: complete, verified (clean slate retained on restart).
+- ✅ **Sample data fully removed + auto-reseed disabled**: complete, verified.
 - ✅ **Upload size support**: increased to **150MB**; nginx `client_max_body_size` set to **160m**.
 - ✅ **OOM during large CSV upload**: resolved via **streaming + batched bulk_write**.
 - ✅ **Cloudflare 520 / timeout on large CSV uploads**: resolved via **async background-job upload pattern** (job_id + polling). Verified by `testing_agent_v3`.
-- ⏳ **LLP Support — Phase 2 (entity-aware enrichment + frontend & API updates)**: pending **user go-ahead**.
+- ✅ **LLP Support — Phase 2 (entity-aware enrichment + frontend & API updates)**: **complete, tested (29/29 pass, zero bugs)**.
 
 ---
 
@@ -236,7 +238,7 @@
   - calls POST `/admin/upload-csv`
   - immediately shows a **progress panel** (non-blocking) with progress bar + running counts
   - polls status every **2.5s** via `getUploadStatus(jobId)`
-  - on `completed`: shows full summary panel (existing UI) + stops polling
+  - on `completed`: shows full summary panel + stops polling
   - on `failed`: shows error + retry
 
 ### Verification (required + completed)
@@ -249,7 +251,7 @@
 
 ### Cleanup notes
 - Removed **102,008** synthetic test records (identifier patterns: `^U00000`, `MH2099PTC`, `^ZZT-`), with **0 leftovers**.
-- User real dataset left intact: **399,248** companies (data_source=`csv_upload`).
+- User real dataset left intact: **399,248** entities (data_source=`csv_upload`).
 
 **Exit criteria (met)**
 - ✅ Upload submit returns quickly (timeout-safe).
@@ -258,63 +260,96 @@
 
 ---
 
-## LLP SUPPORT — Phase 2 (Pending — awaiting user go-ahead)
-**Goal:** Make the entire platform entity-aware (search, detail pages, enrichment, analytics) while maintaining backward compatibility.
+## LLP SUPPORT — Phase 2 (Entity-aware Product Behavior)
+**Goal:** Make the platform fully entity-aware (search, detail pages, enrichment, analytics) while maintaining backward compatibility.
 
-### Backend
-1. **Entity-aware enrichment queue**
-   - Update `services/enrichment_queue.py`:
-     - `get_next_batch(limit=400, entity_type=None)`
-     - `get_failed_batch(limit=400, entity_type=None)`
-     - Include `entity_type` filtering when requested.
+### 2A) Backend (Implemented + Tested)
+1. **Entity-aware query building** (`/app/backend/common.py`)
+   - `build_company_query()` now supports `entity_type` filtering.
+   - Search `$or` now includes `identifier` (supports CIN + LLPIN).
+   - `attach_director_counts()` is entity-aware:
+     - Companies → counts `directors` by CIN
+     - LLPs → counts `partners` by LLPIN
+     - null-cin safe.
 
-2. **Entity-aware MCA scraper**
-   - Update `services/mca_scraper.py`:
-     - Introduce `scrape_entity(identifier, entity_type, cookie)` router.
-     - Keep existing `scrape_company_cin()` logic.
-     - Implement new `scrape_llp(llpin)`:
-       - Research MCA LLP master-data URL/page structure
-       - Parse “Designated Partners”
-       - Save partners to `partners` collection (dpin unique, llpin indexed)
-     - Maintain honest blocked behavior in this environment (stop on CAPTCHA/session expiry).
+2. **Companies router adjustments** (`/app/backend/routers/companies.py`)
+   - Entity lookup resolves by **identifier OR cin** (`_find_entity` uses `$or`).
+   - `GET /companies/{identifier}` works for CIN or LLPIN.
+   - Added: `GET /companies/{llpin}/partners` returning `{llpin, count, partners}`.
+   - List endpoint supports `entity_type` query param.
+   - Similar entities works for both Company/LLP (identifier-based; no crash on null CIN).
 
-3. **Companies router adjustments**
-   - Ensure detail lookup can resolve by `identifier` (not only `cin`) so LLP detail pages work.
-   - Add endpoint: `GET /companies/{identifier}/partners`.
-   - Add `entity_type` filter support to list/search endpoints:
-     - `/companies?entity_type=Company|LLP|Both`
-     - advanced search body includes entity_type.
+3. **Entity-aware enrichment queue + persistence** (`/app/backend/services/enrichment_queue.py`)
+   - `get_next_batch(limit=400, entity_type=None)` and `get_failed_batch(..., entity_type=None)`.
+   - `mark_enriched` / `mark_failed` keyed by `identifier`.
+   - `save_enrichment_data(identifier, data, entity_type)`:
+     - Companies → upsert `directors` by DIN + CIN.
+     - LLPs → upsert `partners` by DPIN + LLPIN.
 
-### Frontend (React SPA)
-1. **Search page (`/frontend/src/pages/Search.js`)**
-   - Add entity-type filter: Company | LLP | Both (default Both).
-   - Add entity type badge on result cards:
+4. **Entity-aware MCA scraping** (`/app/backend/services/mca_scraper.py`)
+   - Added LLP endpoint constant + `_parse_llp_page()`.
+   - Implemented `scrape_llp(llpin)` (parses Designated Partners) + `scrape_entity(identifier, entity_type, cookie)` router.
+   - Maintains honest blocked behavior (CAPTCHA/session expiry stop semantics).
+
+5. **Session runner updated** (`/app/backend/services/run_enrichment_session.py`)
+   - Uses `scrape_entity()` and persists data entity-aware.
+   - Batch can contain mixed Companies + LLPs.
+
+6. **Analytics + models + search suggestions updated**
+   - `analytics.py`: `by_entity_type`, `companies_count`, `llps_count` (honors city filter).
+   - `models.py`: `AdvancedSearchRequest.entity_type`, `ExportRequest.entity_type`.
+   - `search.py`: suggestions include `entity_type` and expose the generic identifier in the `cin` field for compatibility.
+
+### 2B) Frontend (Implemented + Tested)
+1. **Entity type badge**
+   - Added `EntityBadge` component:
      - Company = blue
      - LLP = purple
 
-2. **Detail page (`/frontend/src/pages/CompanyDetail.js`)**
-   - Route continues as `/company/:cin` but treats param as **identifier**.
-   - If entity is LLP:
-     - Directors tab relabel → “Designated Partners”
-     - Fetch from partners endpoint
-     - Overview shows “Total contribution” instead of paid-up/authorized capital
+2. **Search page** (`/frontend/src/pages/Search.js`)
+   - Added entity-type filter select: All / Companies / LLPs.
+   - Company cards now render entity badge.
 
-3. **Analytics (`/frontend/src/pages/Analytics.js`)**
-   - Add Company vs LLP breakdown as a dimension/filter in charts and/or KPI modules.
+3. **Cards + routing**
+   - `CompanyCard` links by `identifier || cin` to avoid LLP null-cin broken links.
+   - Card labels adapt: “directors” vs “partners”; LLP uses `total_contribution`.
 
-**Exit criteria (Phase 2)**
-- LLPs are searchable, viewable in detail pages, and display partners.
-- Enrichment runner can enrich both Companies and LLPs (manual cookie + same guardrails).
-- Analytics supports entity-type breakdown.
+4. **Entity-aware detail page** (`/frontend/src/pages/CompanyDetail.js`)
+   - Route param is treated as a generic identifier (CIN or LLPIN).
+   - If LLP:
+     - “Directors” tab relabels to “Designated Partners”
+     - Fetches partners via `/companies/{llpin}/partners`
+     - Overview uses “LLPIN” and “Total contribution” (hides authorized/paid-up)
+   - If Company:
+     - Standard Directors flow
+     - Overview includes Authorized/Paid-up capital
+
+5. **Analytics** (`/frontend/src/pages/Analytics.js`)
+   - Added “Company vs LLP” breakdown card (tiles + split bar) using `/analytics/summary`.
+
+### Verification (required + completed)
+- ✅ `testing_agent_v3` iteration_5: **100% overall (29/29)**
+  - Backend: **100% (19/19)**
+  - Frontend: **100% (10/10)**
+  - Confirmed real dataset counts intact: **306,045 Companies + 93,203 LLPs**.
+  - No regressions across dashboard/export/enrichment.
+
+**Exit criteria (met)**
+- ✅ LLPs are searchable and filterable.
+- ✅ LLP detail pages render correctly (Partners + Total contribution).
+- ✅ Analytics supports company-vs-LLP breakdown.
+- ✅ Manual enrichment runner supports both Companies + LLPs (same guardrails).
 
 ---
 
-## Next Actions (Immediate)
-1. **User confirmation**: proceed with **LLP Phase 2** (entity-aware enrichment + API + frontend updates).
-2. (Optional hardening) Consider adding:
-   - server-side cancellation endpoint for upload jobs
-   - job retention/cleanup policy for `upload_jobs`
-   - concurrency limiting (one upload job at a time) if needed
+## Next Actions (Optional Enhancements)
+1. **Date normalization on import (optional; out-of-scope observation)**
+   - Registration trend chart may appear sparse if uploaded `date_of_incorporation` formats were inconsistent.
+   - Potential improvement: enhance CSV date parser, log date-parse rejects, and optionally backfill/normalize.
+2. **Upload-job operations hardening (optional)**
+   - Job cancellation endpoint
+   - Retention/cleanup policy for `upload_jobs`
+   - Concurrency limiting (e.g., one job at a time)
 
 ---
 
@@ -328,7 +363,7 @@
 ### LLP support
 - ✅ Phase 1: import + schema + indexes + upload UI complete.
 - ✅ Large uploads are both **memory-safe** and **timeout-safe** (job_id + polling).
-- ⏳ Phase 2: end-to-end entity-aware product behavior (search/detail/analytics/enrichment).
+- ✅ Phase 2: end-to-end entity-aware product behavior (search/detail/analytics/enrichment).
 
 ---
 
@@ -338,17 +373,28 @@
 - CSV upload status endpoint: `GET /api/v1/admin/upload-csv/{job_id}/status`
 - Purge sample endpoint: `POST /api/v1/admin/purge-sample`
 - Dashboard route: `/admin/enrichment` (protected)
-- Key new/updated files:
-  - `/app/backend/services/csv_upload.py` (process_upload_job background worker)
-  - `/app/backend/services/ingestion.py` (upload_jobs indexes)
-  - `/app/backend/routers/admin.py` (async submit + status endpoint)
-  - `/app/frontend/src/components/admin/DataUploadCard.js` (job_id submit + polling UI)
-  - `/app/frontend/src/lib/api.js` (uploadCsv + getUploadStatus)
-  - `/app/frontend/src/constants/testIds/adminEnrichment.js` (DATA_UPLOAD progress testid)
-  - `/app/deploy/nginx.conf` (client_max_body_size 160m)
-- Test reports:
-  - `/app/test_reports/iteration_2.json` (enrichment runner/dashboard)
-  - `/app/test_reports/iteration_3.json` (CSV upload + LLP Phase 1)
-  - `/app/test_reports/iteration_4.json` (**Cloudflare 520 fix verification**)
+
+### Key new/updated files (high signal)
+- `/app/backend/common.py` (entity_type filtering + entity-aware people counts)
+- `/app/backend/routers/companies.py` (identifier-based lookup + /partners)
+- `/app/backend/routers/analytics.py` (entity-type breakdown)
+- `/app/backend/routers/search.py` (suggestion payload includes entity_type)
+- `/app/backend/services/enrichment_queue.py` (identifier-keyed + partners persistence)
+- `/app/backend/services/mca_scraper.py` (scrape_llp + scrape_entity)
+- `/app/backend/services/run_enrichment_session.py` (entity-aware scraping + persistence)
+- `/app/backend/services/csv_upload.py` (background job worker)
+- `/app/backend/services/ingestion.py` (upload_jobs indexes)
+- `/app/backend/routers/admin.py` (async upload submit + status endpoint)
+- `/app/frontend/src/components/EntityBadge.js`
+- `/app/frontend/src/components/CompanyCard.js`
+- `/app/frontend/src/pages/Search.js`
+- `/app/frontend/src/pages/CompanyDetail.js`
+- `/app/frontend/src/pages/Analytics.js`
+
+### Test reports
+- `/app/test_reports/iteration_2.json` (enrichment runner/dashboard)
+- `/app/test_reports/iteration_3.json` (CSV upload + LLP Phase 1)
+- `/app/test_reports/iteration_4.json` (Cloudflare 520 fix verification)
+- `/app/test_reports/iteration_5.json` (**LLP Phase 2 verification: 29/29 pass**)
 
 **Implementation note:** The original LLP addendum referenced Next.js/TS paths; implementation was correctly adapted to this project’s actual **React SPA (JS)** structure and backend `db.py`/`services/ingestion.py` indexing system.

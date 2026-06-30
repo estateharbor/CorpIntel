@@ -24,7 +24,7 @@
     "status": "completed"
   },
   {
-    "content": "Backend: restart + curl test (LLP detail, /partners, entity_type filter, analytics) - PASSED",
+    "content": "Backend: restart + curl test - PASSED",
     "status": "completed"
   },
   {
@@ -36,7 +36,7 @@
     "status": "completed"
   },
   {
-    "content": "Frontend CompanyDetail.js: identifier-based; Designated Partners tab + Total Contribution for LLP",
+    "content": "Frontend CompanyDetail.js: Designated Partners tab + Total Contribution for LLP",
     "status": "completed"
   },
   {
@@ -44,11 +44,11 @@
     "status": "completed"
   },
   {
-    "content": "Frontend: esbuild check + screenshot (Company + LLP detail) - PASSED",
+    "content": "Frontend: esbuild + screenshot - PASSED",
     "status": "completed"
   },
   {
-    "content": "Test: testing_agent_v3 for LLP Phase 2 (backend + frontend); fix bugs",
-    "status": "in_progress"
+    "content": "Test: testing_agent_v3 LLP Phase 2 - 29/29 PASSED, zero bugs",
+    "status": "completed"
   }
 ]
