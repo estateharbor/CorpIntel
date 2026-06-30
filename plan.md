@@ -5,7 +5,7 @@
 - Provide an **Admin Enrichment Dashboard** to monitor queue progress and guide the operator with **copy/paste terminal commands**.
 - Ensure **all background/scheduled MCA enrichment is disabled** (prevents bans and preserves queue accuracy). Background jobs may continue for **classification only**.
 - Extend the platform to support **LLPs alongside Companies** via a generic identifier model (CIN/LLPIN), starting with **Phase 1: CSV upload + entity schema**.
-- Provide a **production-safe, memory-safe** CSV upload pipeline that supports **up to 150MB** files without pod termination.
+- Provide a **production-safe, memory-safe, timeout-safe** CSV upload pipeline that supports **large master-data CSVs (3–5 lakh rows)** without **Cloudflare/origin timeouts** or **pod OOM**.
 - Maintain backward compatibility: existing “company” flows that query by `cin` continue to work for Company docs.
 
 **Current status:**
@@ -14,9 +14,10 @@
 - ✅ **Auto MCA enrichment disabled** in APScheduler: complete, verified.
 - ✅ **LLP Support — Phase 1 (CSV upload + entity data model)**: complete, tested.
 - ✅ **Sample data fully removed + auto-reseed disabled**: complete, verified (clean slate retained on restart).
-- ✅ **CSV upload limit increased to 150MB + nginx body-size increased**: complete.
-- ✅ **OOM during large CSV upload resolved** via streaming + batched bulk writes: complete, stress-tested.
-- ⏳ **LLP Support — Phase 2 (entity-aware enrichment + frontend & API updates)**: pending **user review/go-ahead**.
+- ✅ **Upload size support**: increased to **150MB**; nginx `client_max_body_size` set to **160m**.
+- ✅ **OOM during large CSV upload**: resolved via **streaming + batched bulk_write**.
+- ✅ **Cloudflare 520 / timeout on large CSV uploads**: resolved via **async background-job upload pattern** (job_id + polling). Verified by `testing_agent_v3`.
+- ⏳ **LLP Support — Phase 2 (entity-aware enrichment + frontend & API updates)**: pending **user go-ahead**.
 
 ---
 
@@ -155,59 +156,105 @@
   - `partners.dpin` unique
   - `partners.llpin`
 
-#### C) Backend CSV upload service (streaming + bulk)
-- Added `/app/backend/services/csv_upload.py`:
+#### C) Backend CSV upload service core logic
+- `/app/backend/services/csv_upload.py`:
   - Flexible header aliasing (case/space-insensitive)
   - Dual CIN/LLPIN validation per spec
   - Upsert by `identifier`
-  - LLP `total_contribution` → `paid_up_capital` mapping for cohort filtering + store original `total_contribution`
+  - LLP `total_contribution` → `paid_up_capital` mapping for cohort filtering + keep original `total_contribution`
   - Preserves enrichment/classification state via `$setOnInsert`
-  - **Memory-safe streaming parser** (`csv.DictReader` over a text stream, line-by-line)
-  - **Batch upserts** via **unordered `bulk_write`** with `UpdateOne(..., upsert=True)` in batches of **1000**
-  - Handles `BulkWriteError` (e.g., duplicates) and counts these as rejected where applicable
-  - Returns summary broken down by entity type:
-    - `companies_inserted`, `companies_updated`, `llps_inserted`, `llps_updated`, `rejected_count`, `rejected_rows` (row numbers + reasons)
+  - Batch upserts via **unordered `bulk_write`** with `UpdateOne(..., upsert=True)` in batches of **1000**
 
-#### D) Backend API endpoint (150MB + streaming temp-file)
-- `POST /api/v1/admin/upload-csv` (multipart form `file`):
-  - Strictly rejects non-CSV uploads with `400`
-  - **150MB cap**
-  - **OOM fix:** streams the upload to a temporary file in **1MB chunks**, enforcing the cap during streaming, then parses from disk and deletes the temp file
-
-#### E) Frontend UI
-- Added a **Data Upload card** to the Admin MCA Enrichment page:
-  - Drag/drop + file picker
-  - Upload action + toast notifications
-  - Result panel with stat pills + rejected-rows table
-  - “CSV template” download
-  - “Clear sample data” button (with confirm dialog)
-  - Test IDs added for automation
-
-#### F) Sample-data purge + reseed guard
+#### D) Sample-data purge + reseed guard
 - Added `POST /api/v1/admin/purge-sample`:
-  - Deletes all docs labeled `data_source="sample"` + their related directors/enrichment/alerts
+  - Deletes all docs labeled `data_source="sample"` + related directors/enrichment/alerts
   - Sets persistent marker `system_config.ingest.sample_seed_disabled=true`
 - Updated backend startup (`server.py`) to respect the marker and **skip any auto sample reseeding**
 
-#### G) Deployment request-body limit
-- Updated `deploy/nginx.conf`: `client_max_body_size 160m` to support 150MB multipart uploads.
+#### E) Deployment request-body limit
+- Updated `deploy/nginx.conf`: `client_max_body_size 160m`
 
 ### Verification (executed)
 - Curl tests: insert/update/reject behavior; LLP mapping verified; indexes verified.
-- UI tests: `set_input_files` + upload + result panel rendering.
+- UI tests: upload + summary rendering.
 - `testing_agent_v3` iteration_3:
   - Frontend: 100%
   - Backend: passed after tightening non-CSV validation
-- **OOM resolution verified:**
-  - Functional: small mixed CSV → inserts + rejects correct; re-upload → updates correct.
-  - Stress: generated **300,000-row / 31MB** CSV → processed in **~44s**, **RSS stayed flat (~26MB)** before/during/after.
-  - Cleanup: removed synthetic stress-test identifiers without touching real uploaded data.
 
 **Exit criteria (met)**
 - ✅ Platform stores Company + LLP rows safely with correct uniqueness constraints.
 - ✅ Admin can upload CSV and see a clear summary + rejected rows.
-- ✅ Upload supports large files without memory spikes/pod termination.
 - ✅ No regressions to existing Company/CIN flows.
+
+---
+
+## FIX — Large CSV Upload Cloudflare 520 / Timeout (Background Job Pattern)
+**Problem:** Uploading large master-data CSVs (3–5 lakh rows) caused Cloudflare 520 due to synchronous parsing/upsert inside one request.
+
+### What changed (implemented + tested)
+#### A) New collection: `upload_jobs`
+- Stores upload job lifecycle + progress:
+  - `job_id` (unique, indexed)
+  - `filename`
+  - `status`: `queued | processing | completed | failed`
+  - `total_rows`, `processed_rows`
+  - `inserted_count`, `updated_count`
+  - `rejected_count`, `rejected_rows`
+  - `duplicate_within_file_count`
+  - Breakdown: `companies_inserted/updated`, `llps_inserted/updated`
+  - `error_message`, `created_at`, `started_at`, `completed_at`
+
+#### B) Non-blocking submit endpoint
+- `POST /api/v1/admin/upload-csv` now:
+  - streams file to temp disk in **1MB chunks** (150MB cap)
+  - inserts an `upload_jobs` record with `status="queued"`
+  - launches an asyncio background task
+  - **returns immediately** with `{job_id, status:"queued"}` (no parsing in request)
+
+#### C) Background worker (chunked + progress updates)
+- `services/csv_upload.process_upload_job(db, job_id, temp_path)`:
+  - line-by-line CSV parsing
+  - validation: CIN/LLPIN, required fields
+  - **duplicate-within-file** detection (`seen` set)
+  - batched unordered `bulk_write` (1000/batch)
+  - updates `upload_jobs` after each batch so UI can poll real-time
+  - sets `status="completed"` with full summary or `status="failed"` with `error_message`
+  - deletes the temp file in `finally`
+
+#### D) Progress polling endpoint
+- `GET /api/v1/admin/upload-csv/{job_id}/status`:
+  - returns the job doc
+  - `404` for unknown job_id
+
+#### E) Index updates
+- `ensure_indexes` now adds:
+  - `upload_jobs.job_id` unique
+  - `upload_jobs.created_at`
+
+#### F) Frontend (Admin Enrichment → Data Upload card)
+- Submit now:
+  - calls POST `/admin/upload-csv`
+  - immediately shows a **progress panel** (non-blocking) with progress bar + running counts
+  - polls status every **2.5s** via `getUploadStatus(jobId)`
+  - on `completed`: shows full summary panel (existing UI) + stops polling
+  - on `failed`: shows error + retry
+
+### Verification (required + completed)
+- ✅ `testing_agent_v3` iteration_4: Backend **100% (11/11)**, Frontend **100%**
+  - Large CSV (100k rows): submit returned in **0.67s**, job completed in **10.4s** via polling
+  - Validation counts correct (CIN/LLPIN/duplicate/rejected)
+  - Re-upload → updates
+  - Non-CSV → 400, unknown job → 404
+  - No frontend runtime errors; dashboard regression OK
+
+### Cleanup notes
+- Removed **102,008** synthetic test records (identifier patterns: `^U00000`, `MH2099PTC`, `^ZZT-`), with **0 leftovers**.
+- User real dataset left intact: **399,248** companies (data_source=`csv_upload`).
+
+**Exit criteria (met)**
+- ✅ Upload submit returns quickly (timeout-safe).
+- ✅ Background processing provides real-time progress.
+- ✅ Large uploads complete without Cloudflare 520.
 
 ---
 
@@ -263,8 +310,11 @@
 ---
 
 ## Next Actions (Immediate)
-1. **User review**: confirm Phase 1 LLP upload + large-file streaming behavior meets expectations.
-2. If approved: start **LLP Phase 2** (entity-aware enrichment + API + frontend).
+1. **User confirmation**: proceed with **LLP Phase 2** (entity-aware enrichment + API + frontend updates).
+2. (Optional hardening) Consider adding:
+   - server-side cancellation endpoint for upload jobs
+   - job retention/cleanup policy for `upload_jobs`
+   - concurrency limiting (one upload job at a time) if needed
 
 ---
 
@@ -276,30 +326,29 @@
 - ✅ Full regression tests pass.
 
 ### LLP support
-- ✅ Phase 1: import + schema + indexes + UI upload complete and safe.
-- ✅ Large upload OOM risk removed (streaming + batched bulk writes).
+- ✅ Phase 1: import + schema + indexes + upload UI complete.
+- ✅ Large uploads are both **memory-safe** and **timeout-safe** (job_id + polling).
 - ⏳ Phase 2: end-to-end entity-aware product behavior (search/detail/analytics/enrichment).
 
 ---
 
 ## Notes / Artifacts
 - Backend progress endpoint: `GET /api/v1/admin/enrichment-progress`
-- CSV upload endpoint: `POST /api/v1/admin/upload-csv` (multipart form-data: `file`, max 150MB)
+- CSV upload submit endpoint: `POST /api/v1/admin/upload-csv` (multipart: `file`, returns `{job_id}`; max 150MB)
+- CSV upload status endpoint: `GET /api/v1/admin/upload-csv/{job_id}/status`
 - Purge sample endpoint: `POST /api/v1/admin/purge-sample`
 - Dashboard route: `/admin/enrichment` (protected)
 - Key new/updated files:
-  - `/app/backend/services/csv_upload.py` (stream parse + bulk_write)
-  - `/app/backend/services/ingestion.py` (ensure_indexes migration + entity-aware indexes)
-  - `/app/backend/routers/admin.py` (stream-to-temp upload handler)
-  - `/app/backend/server.py` (sample reseed disable marker)
-  - `/app/backend/models.py` (Partner + upload models)
-  - `/app/frontend/src/components/admin/DataUploadCard.js` (upload UI + purge button)
-  - `/app/frontend/src/pages/AdminEnrichment.js` (upload card embedded)
-  - `/app/frontend/src/lib/api.js` (uploadCsv + purgeSampleData helpers)
-  - `/app/frontend/src/constants/testIds/adminEnrichment.js` (DATA_UPLOAD test IDs)
+  - `/app/backend/services/csv_upload.py` (process_upload_job background worker)
+  - `/app/backend/services/ingestion.py` (upload_jobs indexes)
+  - `/app/backend/routers/admin.py` (async submit + status endpoint)
+  - `/app/frontend/src/components/admin/DataUploadCard.js` (job_id submit + polling UI)
+  - `/app/frontend/src/lib/api.js` (uploadCsv + getUploadStatus)
+  - `/app/frontend/src/constants/testIds/adminEnrichment.js` (DATA_UPLOAD progress testid)
   - `/app/deploy/nginx.conf` (client_max_body_size 160m)
 - Test reports:
   - `/app/test_reports/iteration_2.json` (enrichment runner/dashboard)
   - `/app/test_reports/iteration_3.json` (CSV upload + LLP Phase 1)
+  - `/app/test_reports/iteration_4.json` (**Cloudflare 520 fix verification**)
 
 **Implementation note:** The original LLP addendum referenced Next.js/TS paths; implementation was correctly adapted to this project’s actual **React SPA (JS)** structure and backend `db.py`/`services/ingestion.py` indexing system.
