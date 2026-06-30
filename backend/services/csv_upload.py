@@ -15,6 +15,7 @@ name) are rejected and reported back to the operator.
 """
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import logging
@@ -290,3 +291,163 @@ async def process_upload(db, text_stream) -> dict:
         f"{total_upd} updated, {summary['rejected_count']} rejected.")
     logger.info("[csv_upload] %s (total_rows=%s)", summary["message"], summary["total_rows"])
     return summary
+
+
+
+# =====================================================================
+# Async background-job pattern (for very large files / Cloudflare-safe)
+# =====================================================================
+
+def _count_data_rows(path: str) -> int:
+    """Fast newline-based row estimate (minus header) for the progress bar."""
+    n = 0
+    with open(path, "rb") as f:
+        for _ in f:
+            n += 1
+    return max(n - 1, 0)
+
+
+def _progress_set(c: dict) -> dict:
+    return {
+        "processed_rows": c["processed_rows"],
+        "inserted_count": c["inserted_count"],
+        "updated_count": c["updated_count"],
+        "rejected_count": c["rejected_count"],
+        "duplicate_within_file_count": c["duplicate_within_file_count"],
+        "companies_inserted": c["companies_inserted"],
+        "companies_updated": c["companies_updated"],
+        "llps_inserted": c["llps_inserted"],
+        "llps_updated": c["llps_updated"],
+    }
+
+
+async def process_upload_job(db, job_id: str, temp_path: str) -> None:
+    """Background worker: chunked, memory-safe CSV ingest with live progress.
+
+    Reads the temp CSV line-by-line, validates each row (CIN/LLPIN + required
+    fields + duplicate-within-file), upserts valid rows via unordered
+    ``bulk_write`` in batches, and updates the ``upload_jobs`` document after
+    every batch so the frontend can poll real-time progress. Sets status
+    ``completed`` (with full summary) or ``failed`` (with error_message).
+    """
+    import os
+
+    c = {
+        "processed_rows": 0, "inserted_count": 0, "updated_count": 0,
+        "rejected_count": 0, "duplicate_within_file_count": 0,
+        "companies_inserted": 0, "companies_updated": 0,
+        "llps_inserted": 0, "llps_updated": 0,
+    }
+    rejected_rows: List[dict] = []
+    seen = set()
+    now = datetime.now(timezone.utc)
+
+    try:
+        total_est = _count_data_rows(temp_path)
+        await db.upload_jobs.update_one({"job_id": job_id}, {"$set": {
+            "status": "processing", "started_at": now, "total_rows": total_est}})
+
+        ops: List[UpdateOne] = []
+        metas: List[dict] = []
+
+        async def flush():
+            if not ops:
+                return
+            upserted_idx, error_idx = set(), set()
+            try:
+                res = await db.companies.bulk_write(ops, ordered=False)
+                upserted_idx = set((res.upserted_ids or {}).keys())
+            except BulkWriteError as bwe:
+                details = bwe.details or {}
+                upserted_idx = {u["index"] for u in details.get("upserted", [])}
+                error_idx = {e["index"] for e in details.get("writeErrors", [])}
+            for idx, m in enumerate(metas):
+                if idx in error_idx:
+                    c["rejected_count"] += 1
+                    if len(rejected_rows) < 50:
+                        rejected_rows.append({"row_number": m["row_number"],
+                                              "identifier": m["identifier"],
+                                              "reason": "Database write error (skipped)"})
+                    continue
+                inserted = idx in upserted_idx
+                et = m["entity_type"]
+                if et == "LLP":
+                    c["llps_inserted" if inserted else "llps_updated"] += 1
+                else:
+                    c["companies_inserted" if inserted else "companies_updated"] += 1
+                c["inserted_count" if inserted else "updated_count"] += 1
+            ops.clear()
+            metas.clear()
+
+        with open(temp_path, "r", encoding="utf-8-sig", errors="replace", newline="") as fh:
+            reader = csv.DictReader(fh)
+            if not reader.fieldnames:
+                raise ValueError("CSV has no header row")
+
+            for i, raw in enumerate(reader, start=2):
+                c["processed_rows"] += 1
+                norm = {_norm_key(k): (v.strip() if isinstance(v, str) else v)
+                        for k, v in raw.items() if k is not None}
+
+                raw_ident = (_first(norm, "identifier") or _first(norm, "cin")
+                             or _first(norm, "llpin"))
+                ident = validate_identifier(raw_ident)
+                if not ident["valid"]:
+                    c["rejected_count"] += 1
+                    if len(rejected_rows) < 50:
+                        rejected_rows.append({"row_number": i, "identifier": raw_ident,
+                                              "reason": "Identifier is neither a valid CIN nor LLPIN"})
+                    continue
+                if not _first(norm, "name"):
+                    c["rejected_count"] += 1
+                    if len(rejected_rows) < 50:
+                        rejected_rows.append({"row_number": i, "identifier": ident["value"],
+                                              "reason": "Missing required field: name"})
+                    continue
+                if ident["value"] in seen:
+                    c["duplicate_within_file_count"] += 1
+                    continue
+                seen.add(ident["value"])
+
+                doc = _build_entity(norm, ident)
+                ops.append(UpdateOne(
+                    {"identifier": ident["value"]},
+                    {"$set": doc, "$setOnInsert": {
+                        "enriched": False, "enrichment_attempted": False,
+                        "classified": False, "data_quality_score": 0,
+                        "sector": None, "sub_sector": None, "created_at": now,
+                    }},
+                    upsert=True,
+                ))
+                metas.append({"entity_type": ident["entity_type"], "row_number": i,
+                              "identifier": ident["value"]})
+
+                if len(ops) >= _BATCH_SIZE:
+                    await flush()
+                    await db.upload_jobs.update_one({"job_id": job_id},
+                                                    {"$set": _progress_set(c)})
+                    await asyncio.sleep(0)  # yield to the event loop
+
+            await flush()
+
+        msg = (f"Processed {c['processed_rows']} rows: {c['inserted_count']} inserted, "
+               f"{c['updated_count']} updated, {c['rejected_count']} rejected, "
+               f"{c['duplicate_within_file_count']} duplicate-in-file.")
+        await db.upload_jobs.update_one({"job_id": job_id}, {"$set": {
+            "status": "completed", "completed_at": datetime.now(timezone.utc),
+            "total_rows": c["processed_rows"], **_progress_set(c),
+            "rejected_rows": rejected_rows, "message": msg}})
+        logger.info("[csv_upload_job %s] %s", job_id, msg)
+
+    except Exception as e:  # noqa: BLE001
+        logger.exception("[csv_upload_job %s] FAILED", job_id)
+        await db.upload_jobs.update_one({"job_id": job_id}, {"$set": {
+            "status": "failed", "error_message": str(e),
+            "completed_at": datetime.now(timezone.utc),
+            **_progress_set(c), "rejected_rows": rejected_rows}})
+    finally:
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except OSError:
+            pass

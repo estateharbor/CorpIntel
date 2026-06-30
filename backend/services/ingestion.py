@@ -209,6 +209,8 @@ async def ensure_indexes(db) -> None:
     await db.users.create_index("email", unique=True)
     await db.user_sessions.create_index("session_token")
     await db.alerts_log.create_index("cin")
+    await db.upload_jobs.create_index("job_id", unique=True)
+    await db.upload_jobs.create_index("created_at")
     logger.info("MongoDB indexes ensured (entity-aware: Companies + LLPs).")
 
 

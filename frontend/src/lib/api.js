@@ -64,6 +64,9 @@ export const uploadCsv = (file) => {
     .then((r) => r.data);
 };
 
+export const getUploadStatus = (jobId) =>
+  api.get(`/admin/upload-csv/${jobId}/status`).then((r) => r.data);
+
 export const purgeSampleData = () =>
   api.post("/admin/purge-sample").then((r) => r.data);
 

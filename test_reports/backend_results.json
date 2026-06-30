@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-06-30T14:43:10.027425",
+  "total": 11,
+  "passed": 11,
+  "failed": 0,
+  "results": [
+    {
+      "test": "Health endpoint",
+      "status": "PASSED"
+    },
+    {
+      "test": "Admin stats endpoint",
+      "status": "PASSED"
+    },
+    {
+      "test": "Enrichment progress endpoint",
+      "status": "PASSED"
+    },
+    {
+      "test": "Companies list endpoint",
+      "status": "PASSED"
+    },
+    {
+      "test": "Upload CSV returns immediately with job_id",
+      "status": "PASSED"
+    },
+    {
+      "test": "Upload status polling",
+      "status": "PASSED"
+    },
+    {
+      "test": "Validation counts (small CSV)",
+      "status": "PASSED"
+    },
+    {
+      "test": "Upsert behavior (re-upload)",
+      "status": "PASSED"
+    },
+    {
+      "test": "Large CSV upload (100k rows)",
+      "status": "PASSED"
+    },
+    {
+      "test": "Non-CSV upload returns 400",
+      "status": "PASSED"
+    },
+    {
+      "test": "Invalid job_id returns 404",
+      "status": "PASSED"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   UploadCloud, FileSpreadsheet, X, CheckCircle2, AlertTriangle, Download,
   Loader2, Building2, Users, Trash2,
@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -16,7 +17,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { uploadCsv, purgeSampleData } from "@/lib/api";
+import { uploadCsv, getUploadStatus, purgeSampleData } from "@/lib/api";
 import { DATA_UPLOAD as T } from "@/constants/testIds";
 
 const TEMPLATE_HEADER =
@@ -58,11 +59,24 @@ const StatPill = ({ icon: Icon, label, value, tone }) => (
 
 export function DataUploadCard({ onUploaded }) {
   const [file, setFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [job, setJob] = useState(null);        // live job doc (queued/processing)
+  const [result, setResult] = useState(null);  // completed job doc
+  const [error, setError] = useState(null);     // failed error_message
   const [dragOver, setDragOver] = useState(false);
   const [purging, setPurging] = useState(false);
   const inputRef = useRef(null);
+  const pollRef = useRef(null);
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  // Clean up the polling interval on unmount.
+  useEffect(() => stopPolling, []);
 
   const pickFile = (f) => {
     if (!f) return;
@@ -72,6 +86,8 @@ export function DataUploadCard({ onUploaded }) {
     }
     setFile(f);
     setResult(null);
+    setError(null);
+    setJob(null);
   };
 
   const onDrop = (e) => {
@@ -81,26 +97,57 @@ export function DataUploadCard({ onUploaded }) {
   };
 
   const clear = () => {
+    stopPolling();
     setFile(null);
     setResult(null);
+    setError(null);
+    setJob(null);
     if (inputRef.current) inputRef.current.value = "";
+  };
+
+  const startPolling = (jobId) => {
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const doc = await getUploadStatus(jobId);
+        setJob(doc);
+        if (doc.status === "completed") {
+          stopPolling();
+          setResult(doc);
+          setJob(null);
+          const added = (doc.inserted_count || 0);
+          toast.success(`Upload complete: ${added} added, ${doc.updated_count || 0} updated, ${doc.rejected_count || 0} rejected`);
+          if (onUploaded) onUploaded();
+        } else if (doc.status === "failed") {
+          stopPolling();
+          setError(doc.error_message || "Upload processing failed");
+          setJob(null);
+          toast.error("Upload failed during processing");
+        }
+      } catch (e) {
+        // transient poll error — keep polling
+      }
+    }, 2500);
   };
 
   const submit = async () => {
     if (!file) return;
-    setUploading(true);
+    setSubmitting(true);
+    setResult(null);
+    setError(null);
     try {
       const res = await uploadCsv(file);
-      setResult(res);
-      const newCount = (res.companies_inserted || 0) + (res.llps_inserted || 0);
-      const updCount = (res.companies_updated || 0) + (res.llps_updated || 0);
-      toast.success(`Upload complete: ${newCount} added, ${updCount} updated, ${res.rejected_count || 0} rejected`);
-      if (onUploaded) onUploaded();
+      // Immediately enter background-processing mode (non-blocking).
+      setJob({ job_id: res.job_id, status: res.status || "queued",
+               total_rows: 0, processed_rows: 0, inserted_count: 0,
+               updated_count: 0, rejected_count: 0, duplicate_within_file_count: 0 });
+      toast.info("Upload started — processing in the background");
+      startPolling(res.job_id);
     } catch (e) {
       const detail = e?.response?.data?.detail || "Upload failed — please check the file and try again";
       toast.error(typeof detail === "string" ? detail : "Upload failed");
     } finally {
-      setUploading(false);
+      setSubmitting(false);
     }
   };
 
@@ -118,6 +165,11 @@ export function DataUploadCard({ onUploaded }) {
       setPurging(false);
     }
   };
+
+  const busy = submitting || !!job;          // an upload is in progress
+  const pct = job && job.total_rows > 0
+    ? Math.min(100, Math.round((job.processed_rows / job.total_rows) * 100))
+    : 0;
 
   return (
     <Card className="p-5" data-testid={T.card}>
@@ -213,14 +265,61 @@ export function DataUploadCard({ onUploaded }) {
             className="bg-accent text-accent-foreground hover:brightness-95"
             size="sm"
             onClick={submit}
-            disabled={uploading}
+            disabled={busy}
             data-testid={T.submitButton}
           >
-            {uploading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <UploadCloud className="h-4 w-4 mr-2" />}
-            {uploading ? "Uploading…" : "Upload"}
+            {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <UploadCloud className="h-4 w-4 mr-2" />}
+            {submitting ? "Starting…" : job ? "Processing…" : "Upload"}
           </Button>
-          <Button variant="ghost" size="icon" onClick={clear} disabled={uploading} aria-label="Clear file" data-testid={T.clearButton}>
+          <Button variant="ghost" size="icon" onClick={clear} disabled={submitting} aria-label="Clear file" data-testid={T.clearButton}>
             <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* Live background-processing progress */}
+      {job && (
+        <div className="mt-4 space-y-3" data-testid={T.progress}>
+          <Separator />
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="text-sm font-medium flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-accent" />
+              {job.status === "queued" ? "Queued — starting…" : "Processing in the background…"}
+            </span>
+            <span className="text-sm tabular-nums text-muted-foreground">
+              {(job.processed_rows || 0).toLocaleString()} / {(job.total_rows || 0).toLocaleString()} rows
+            </span>
+          </div>
+          <Progress value={pct} className="h-3" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <StatPill icon={Building2} label="Inserted" value={(job.inserted_count || 0).toLocaleString()}
+              tone="bg-[hsl(199_78%_94%)] text-[hsl(199_78%_30%)] dark:bg-[hsl(199_78%_18%)] dark:text-[hsl(199_78%_70%)]" />
+            <StatPill icon={Building2} label="Updated" value={(job.updated_count || 0).toLocaleString()}
+              tone="bg-muted text-muted-foreground" />
+            <StatPill icon={Users} label="Duplicates in file" value={(job.duplicate_within_file_count || 0).toLocaleString()}
+              tone="bg-[hsl(270_60%_95%)] text-[hsl(270_50%_40%)] dark:bg-[hsl(270_40%_22%)] dark:text-[hsl(270_60%_80%)]" />
+            <StatPill icon={AlertTriangle} label="Rejected" value={(job.rejected_count || 0).toLocaleString()}
+              tone="bg-[hsl(38_90%_94%)] text-[hsl(38_90%_34%)] dark:bg-[hsl(38_90%_18%)] dark:text-[hsl(38_90%_70%)]" />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            You can keep using the app — this runs in the background. Job ID: <span className="font-mono">{job.job_id}</span>
+          </p>
+        </div>
+      )}
+
+      {/* Failed state */}
+      {error && (
+        <div className="mt-4 space-y-2">
+          <Separator />
+          <div className="flex items-start gap-2 rounded-lg p-3 bg-[hsl(0_72%_95%)] text-[hsl(0_72%_40%)] dark:bg-[hsl(0_62%_18%)] dark:text-[hsl(0_62%_72%)]">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <div className="font-semibold">Upload failed</div>
+              <div className="opacity-90 break-words">{error}</div>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={submit} disabled={!file || busy}>
+            <UploadCloud className="h-4 w-4 mr-2" /> Retry upload
           </Button>
         </div>
       )}

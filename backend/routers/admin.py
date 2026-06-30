@@ -1,7 +1,11 @@
 """Admin router: ingestion + enrichment + stats."""
 from __future__ import annotations
 
+import asyncio
 import math
+import os
+import tempfile
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytz
@@ -13,6 +17,9 @@ from services.ingestion import (DataGovInClient, seed_from_datagovin,
                                 seed_from_sample)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Keep strong references to in-flight background upload tasks (avoid GC).
+_UPLOAD_TASKS: set = set()
 
 # Enrichment session governance (mirrors services/session_tracker.py)
 _IST = pytz.timezone("Asia/Kolkata")
@@ -53,10 +60,12 @@ async def ingest_seed(count: int = 600):
 
 @router.post("/upload-csv")
 async def upload_csv(file: UploadFile = File(...)):
-    """Bulk-import Companies and LLPs from a CSV file.
+    """Submit a CSV for **background** import (non-blocking).
 
-    Flexible header mapping; validates each row as CIN (Company) or LLPIN (LLP);
-    upserts by the generic identifier and returns an entity-type breakdown.
+    Streams the file to disk, creates an ``upload_jobs`` record, kicks off a
+    background task, and returns a ``job_id`` immediately so the request never
+    sits in the timeout-prone path (fixes Cloudflare 520 on huge files). The
+    frontend polls ``GET /admin/upload-csv/{job_id}/status`` for live progress.
     """
     name = (file.filename or "").lower()
     allowed_types = {"text/csv", "application/csv", "application/vnd.ms-excel"}
@@ -64,16 +73,12 @@ async def upload_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400,
                             detail="Please upload a .csv file (CIN/LLPIN per row)")
 
-    import os
-    import tempfile
-    from services.csv_upload import process_upload
-
     max_bytes = 150 * 1024 * 1024
     tmp_path = None
     try:
-        # Stream the upload to disk in 1MB chunks (bounded memory, any file size).
         written = 0
-        with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".csv") as tmp:
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".csv",
+                                         prefix="upload_") as tmp:
             tmp_path = tmp.name
             while True:
                 chunk = await file.read(1024 * 1024)
@@ -86,21 +91,51 @@ async def upload_csv(file: UploadFile = File(...)):
                 tmp.write(chunk)
         if written == 0:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
-
-        # Stream-parse from disk (csv reads line-by-line; memory stays bounded).
-        with open(tmp_path, "r", encoding="utf-8-sig", errors="replace", newline="") as fh:
-            result = await process_upload(db, fh)
-    finally:
+    except HTTPException:
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
             except OSError:
                 pass
+        raise
 
-    if result.get("total_rows", 0) == 0 and not result.get("ok", True):
-        raise HTTPException(status_code=400,
-                            detail=result.get("message", "Could not parse CSV"))
-    return result
+    job_id = uuid.uuid4().hex
+    await db.upload_jobs.insert_one({
+        "job_id": job_id,
+        "filename": file.filename or "upload.csv",
+        "status": "queued",
+        "total_rows": 0,
+        "processed_rows": 0,
+        "inserted_count": 0,
+        "updated_count": 0,
+        "rejected_count": 0,
+        "duplicate_within_file_count": 0,
+        "companies_inserted": 0,
+        "companies_updated": 0,
+        "llps_inserted": 0,
+        "llps_updated": 0,
+        "rejected_rows": [],
+        "error_message": None,
+        "created_at": datetime.now(timezone.utc),
+        "started_at": None,
+        "completed_at": None,
+    })
+
+    from services.csv_upload import process_upload_job
+    task = asyncio.create_task(process_upload_job(db, job_id, tmp_path))
+    _UPLOAD_TASKS.add(task)
+    task.add_done_callback(_UPLOAD_TASKS.discard)
+
+    return {"job_id": job_id, "status": "queued", "filename": file.filename}
+
+
+@router.get("/upload-csv/{job_id}/status")
+async def upload_csv_status(job_id: str):
+    """Poll the status/progress of a background CSV upload job."""
+    job = await db.upload_jobs.find_one({"job_id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Upload job not found")
+    return job
 
 
 @router.post("/purge-sample")

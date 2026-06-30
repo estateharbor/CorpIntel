@@ -27,6 +27,7 @@ export const DATA_UPLOAD = {
   clearButton: 'data-upload-clear-button',
   result: 'data-upload-result',
   rejectedList: 'data-upload-rejected-list',
+  progress: 'data-upload-progress',
   purgeButton: 'data-upload-purge-sample-button',
   purgeConfirmButton: 'data-upload-purge-confirm-button',
 };
