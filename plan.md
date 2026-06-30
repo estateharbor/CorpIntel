@@ -5,11 +5,17 @@
 - Provide an **Admin Enrichment Dashboard** to monitor queue progress and guide the operator with **copy/paste terminal commands**.
 - Ensure **all background/scheduled MCA enrichment is disabled** (prevents bans and preserves queue accuracy). Background jobs may continue for **classification only**.
 - Extend the platform to support **LLPs alongside Companies** via a generic identifier model (CIN/LLPIN), starting with **Phase 1: CSV upload + entity schema**.
+- Provide a **production-safe, memory-safe** CSV upload pipeline that supports **up to 150MB** files without pod termination.
 - Maintain backward compatibility: existing “company” flows that query by `cin` continue to work for Company docs.
 
 **Current status:**
 - ✅ **MCA human-in-the-loop enrichment runner**: complete, tested, production-ready.
+- ✅ **Admin Enrichment Dashboard**: complete, tested.
+- ✅ **Auto MCA enrichment disabled** in APScheduler: complete, verified.
 - ✅ **LLP Support — Phase 1 (CSV upload + entity data model)**: complete, tested.
+- ✅ **Sample data fully removed + auto-reseed disabled**: complete, verified (clean slate retained on restart).
+- ✅ **CSV upload limit increased to 150MB + nginx body-size increased**: complete.
+- ✅ **OOM during large CSV upload resolved** via streaming + batched bulk writes: complete, stress-tested.
 - ⏳ **LLP Support — Phase 2 (entity-aware enrichment + frontend & API updates)**: pending **user review/go-ahead**.
 
 ---
@@ -149,20 +155,24 @@
   - `partners.dpin` unique
   - `partners.llpin`
 
-#### C) Backend CSV upload service
+#### C) Backend CSV upload service (streaming + bulk)
 - Added `/app/backend/services/csv_upload.py`:
   - Flexible header aliasing (case/space-insensitive)
   - Dual CIN/LLPIN validation per spec
   - Upsert by `identifier`
   - LLP `total_contribution` → `paid_up_capital` mapping for cohort filtering + store original `total_contribution`
   - Preserves enrichment/classification state via `$setOnInsert`
+  - **Memory-safe streaming parser** (`csv.DictReader` over a text stream, line-by-line)
+  - **Batch upserts** via **unordered `bulk_write`** with `UpdateOne(..., upsert=True)` in batches of **1000**
+  - Handles `BulkWriteError` (e.g., duplicates) and counts these as rejected where applicable
   - Returns summary broken down by entity type:
     - `companies_inserted`, `companies_updated`, `llps_inserted`, `llps_updated`, `rejected_count`, `rejected_rows` (row numbers + reasons)
 
-#### D) Backend API endpoint
-- Added `POST /api/v1/admin/upload-csv` (multipart form `file`):
-  - 25MB cap
+#### D) Backend API endpoint (150MB + streaming temp-file)
+- `POST /api/v1/admin/upload-csv` (multipart form `file`):
   - Strictly rejects non-CSV uploads with `400`
+  - **150MB cap**
+  - **OOM fix:** streams the upload to a temporary file in **1MB chunks**, enforcing the cap during streaming, then parses from disk and deletes the temp file
 
 #### E) Frontend UI
 - Added a **Data Upload card** to the Admin MCA Enrichment page:
@@ -170,19 +180,33 @@
   - Upload action + toast notifications
   - Result panel with stat pills + rejected-rows table
   - “CSV template” download
+  - “Clear sample data” button (with confirm dialog)
   - Test IDs added for automation
+
+#### F) Sample-data purge + reseed guard
+- Added `POST /api/v1/admin/purge-sample`:
+  - Deletes all docs labeled `data_source="sample"` + their related directors/enrichment/alerts
+  - Sets persistent marker `system_config.ingest.sample_seed_disabled=true`
+- Updated backend startup (`server.py`) to respect the marker and **skip any auto sample reseeding**
+
+#### G) Deployment request-body limit
+- Updated `deploy/nginx.conf`: `client_max_body_size 160m` to support 150MB multipart uploads.
 
 ### Verification (executed)
 - Curl tests: insert/update/reject behavior; LLP mapping verified; indexes verified.
 - UI tests: `set_input_files` + upload + result panel rendering.
 - `testing_agent_v3` iteration_3:
   - Frontend: 100%
-  - Backend: originally 7/8 due to a LOW validation issue, then ✅ fixed and re-verified (`text/plain` now returns 400).
-- All test-uploaded records cleaned (DB returned to 600 baseline).
+  - Backend: passed after tightening non-CSV validation
+- **OOM resolution verified:**
+  - Functional: small mixed CSV → inserts + rejects correct; re-upload → updates correct.
+  - Stress: generated **300,000-row / 31MB** CSV → processed in **~44s**, **RSS stayed flat (~26MB)** before/during/after.
+  - Cleanup: removed synthetic stress-test identifiers without touching real uploaded data.
 
 **Exit criteria (met)**
 - ✅ Platform stores Company + LLP rows safely with correct uniqueness constraints.
 - ✅ Admin can upload CSV and see a clear summary + rejected rows.
+- ✅ Upload supports large files without memory spikes/pod termination.
 - ✅ No regressions to existing Company/CIN flows.
 
 ---
@@ -239,7 +263,7 @@
 ---
 
 ## Next Actions (Immediate)
-1. **User review** of Phase 1 LLP upload + schema changes.
+1. **User review**: confirm Phase 1 LLP upload + large-file streaming behavior meets expectations.
 2. If approved: start **LLP Phase 2** (entity-aware enrichment + API + frontend).
 
 ---
@@ -253,25 +277,29 @@
 
 ### LLP support
 - ✅ Phase 1: import + schema + indexes + UI upload complete and safe.
+- ✅ Large upload OOM risk removed (streaming + batched bulk writes).
 - ⏳ Phase 2: end-to-end entity-aware product behavior (search/detail/analytics/enrichment).
 
 ---
 
 ## Notes / Artifacts
 - Backend progress endpoint: `GET /api/v1/admin/enrichment-progress`
-- CSV upload endpoint: `POST /api/v1/admin/upload-csv` (multipart form-data: `file`)
+- CSV upload endpoint: `POST /api/v1/admin/upload-csv` (multipart form-data: `file`, max 150MB)
+- Purge sample endpoint: `POST /api/v1/admin/purge-sample`
 - Dashboard route: `/admin/enrichment` (protected)
 - Key new/updated files:
-  - `/app/backend/services/csv_upload.py`
+  - `/app/backend/services/csv_upload.py` (stream parse + bulk_write)
   - `/app/backend/services/ingestion.py` (ensure_indexes migration + entity-aware indexes)
-  - `/app/backend/routers/admin.py` (upload endpoint)
+  - `/app/backend/routers/admin.py` (stream-to-temp upload handler)
+  - `/app/backend/server.py` (sample reseed disable marker)
   - `/app/backend/models.py` (Partner + upload models)
-  - `/app/frontend/src/components/admin/DataUploadCard.js`
+  - `/app/frontend/src/components/admin/DataUploadCard.js` (upload UI + purge button)
   - `/app/frontend/src/pages/AdminEnrichment.js` (upload card embedded)
-  - `/app/frontend/src/lib/api.js` (uploadCsv helper)
+  - `/app/frontend/src/lib/api.js` (uploadCsv + purgeSampleData helpers)
   - `/app/frontend/src/constants/testIds/adminEnrichment.js` (DATA_UPLOAD test IDs)
+  - `/app/deploy/nginx.conf` (client_max_body_size 160m)
 - Test reports:
   - `/app/test_reports/iteration_2.json` (enrichment runner/dashboard)
-  - `/app/test_reports/iteration_3.json` (CSV upload + LLP Phase 1; low-priority bug fixed afterward)
+  - `/app/test_reports/iteration_3.json` (CSV upload + LLP Phase 1)
 
 **Implementation note:** The original LLP addendum referenced Next.js/TS paths; implementation was correctly adapted to this project’s actual **React SPA (JS)** structure and backend `db.py`/`services/ingestion.py` indexing system.

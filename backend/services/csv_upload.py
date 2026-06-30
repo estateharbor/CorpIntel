@@ -22,6 +22,9 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+from pymongo import UpdateOne
+from pymongo.errors import BulkWriteError
+
 from services.city_tagger import extract_area, extract_pin, tag_city
 
 logger = logging.getLogger("corpintel.csv_upload")
@@ -169,24 +172,33 @@ def _build_entity(norm_row: dict, ident: dict) -> dict:
     return doc
 
 
-async def process_upload(db, file_bytes: bytes) -> dict:
-    """Parse CSV bytes, upsert entities, return an entity-type breakdown."""
-    text = _decode(file_bytes)
-    try:
-        reader = csv.DictReader(io.StringIO(text))
-    except Exception as e:  # noqa: BLE001
-        return {"ok": False, "message": f"Could not parse CSV: {e}",
-                "total_rows": 0, "processed": 0,
-                "companies_inserted": 0, "companies_updated": 0,
-                "llps_inserted": 0, "llps_updated": 0,
-                "rejected_count": 0, "rejected_rows": []}
+_EMPTY_SUMMARY = {
+    "total_rows": 0, "processed": 0,
+    "companies_inserted": 0, "companies_updated": 0,
+    "llps_inserted": 0, "llps_updated": 0,
+    "rejected_count": 0, "rejected_rows": [],
+}
 
-    if not reader.fieldnames:
-        return {"ok": False, "message": "CSV has no header row.",
-                "total_rows": 0, "processed": 0,
-                "companies_inserted": 0, "companies_updated": 0,
-                "llps_inserted": 0, "llps_updated": 0,
-                "rejected_count": 0, "rejected_rows": []}
+_BATCH_SIZE = 1000
+
+
+async def process_upload(db, text_stream) -> dict:
+    """Stream-parse a CSV text stream and upsert entities in batches.
+
+    Memory-safe for very large files: rows are read lazily from the stream and
+    flushed to MongoDB via unordered ``bulk_write`` every ``_BATCH_SIZE`` rows,
+    so peak memory stays bounded regardless of file size. Returns an
+    entity-type breakdown (Companies vs LLPs, inserted vs updated) plus a
+    capped sample of rejected rows.
+    """
+    try:
+        reader = csv.DictReader(text_stream)
+        fieldnames = reader.fieldnames
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "message": f"Could not parse CSV: {e}", **_EMPTY_SUMMARY}
+
+    if not fieldnames:
+        return {"ok": False, "message": "CSV has no header row.", **_EMPTY_SUMMARY}
 
     summary = {
         "ok": True, "total_rows": 0, "processed": 0,
@@ -196,6 +208,48 @@ async def process_upload(db, file_bytes: bytes) -> dict:
     }
     now = datetime.now(timezone.utc)
 
+    ops: List[UpdateOne] = []
+    metas: List[dict] = []  # parallel to ops: {entity_type, row_number, identifier}
+
+    def _reject(row_number: int, identifier, reason: str):
+        summary["rejected_count"] += 1
+        if len(summary["rejected_rows"]) < 50:
+            summary["rejected_rows"].append({
+                "row_number": row_number, "identifier": identifier, "reason": reason})
+
+    async def _flush():
+        if not ops:
+            return
+        upserted_idx, error_idx = set(), {}
+        try:
+            result = await db.companies.bulk_write(ops, ordered=False)
+            upserted_idx = set((result.upserted_ids or {}).keys())
+        except BulkWriteError as bwe:
+            details = bwe.details or {}
+            upserted_idx = {u["index"] for u in details.get("upserted", [])}
+            error_idx = {e["index"]: e.get("errmsg", "write error")
+                         for e in details.get("writeErrors", [])}
+        except Exception as e:  # noqa: BLE001
+            for m in metas:
+                _reject(m["row_number"], m["identifier"], f"DB error: {e}")
+            ops.clear()
+            metas.clear()
+            return
+
+        for idx, m in enumerate(metas):
+            if idx in error_idx:
+                _reject(m["row_number"], m["identifier"], "Duplicate/invalid (skipped)")
+                continue
+            summary["processed"] += 1
+            inserted = idx in upserted_idx
+            et = m["entity_type"]
+            if et == "LLP":
+                summary["llps_inserted" if inserted else "llps_updated"] += 1
+            else:
+                summary["companies_inserted" if inserted else "companies_updated"] += 1
+        ops.clear()
+        metas.clear()
+
     for i, raw in enumerate(reader, start=2):  # row 1 is the header
         summary["total_rows"] += 1
         norm = {_norm_key(k): (v.strip() if isinstance(v, str) else v)
@@ -204,58 +258,35 @@ async def process_upload(db, file_bytes: bytes) -> dict:
         raw_ident = (_first(norm, "identifier") or _first(norm, "cin")
                      or _first(norm, "llpin"))
         ident = validate_identifier(raw_ident)
-        name = _first(norm, "name")
-
         if not ident["valid"]:
-            summary["rejected_count"] += 1
-            if len(summary["rejected_rows"]) < 50:
-                summary["rejected_rows"].append({
-                    "row_number": i, "identifier": raw_ident,
-                    "reason": "Identifier is neither a valid CIN nor LLPIN"})
+            _reject(i, raw_ident, "Identifier is neither a valid CIN nor LLPIN")
             continue
-        if not name:
-            summary["rejected_count"] += 1
-            if len(summary["rejected_rows"]) < 50:
-                summary["rejected_rows"].append({
-                    "row_number": i, "identifier": ident["value"],
-                    "reason": "Missing required field: name"})
+        if not _first(norm, "name"):
+            _reject(i, ident["value"], "Missing required field: name")
             continue
 
         doc = _build_entity(norm, ident)
-        set_on_insert = {
-            "enriched": False,
-            "enrichment_attempted": False,
-            "classified": False,
-            "data_quality_score": 0,
-            "sector": None,
-            "sub_sector": None,
-            "created_at": now,
-        }
-        try:
-            res = await db.companies.update_one(
-                {"identifier": ident["value"]},
-                {"$set": doc, "$setOnInsert": set_on_insert},
-                upsert=True,
-            )
-        except Exception as e:  # noqa: BLE001
-            summary["rejected_count"] += 1
-            if len(summary["rejected_rows"]) < 50:
-                summary["rejected_rows"].append({
-                    "row_number": i, "identifier": ident["value"],
-                    "reason": f"DB error: {e}"})
-            continue
+        ops.append(UpdateOne(
+            {"identifier": ident["value"]},
+            {"$set": doc, "$setOnInsert": {
+                "enriched": False, "enrichment_attempted": False,
+                "classified": False, "data_quality_score": 0,
+                "sector": None, "sub_sector": None, "created_at": now,
+            }},
+            upsert=True,
+        ))
+        metas.append({"entity_type": ident["entity_type"], "row_number": i,
+                      "identifier": ident["value"]})
 
-        summary["processed"] += 1
-        inserted = res.upserted_id is not None
-        if ident["entity_type"] == "LLP":
-            summary["llps_inserted" if inserted else "llps_updated"] += 1
-        else:
-            summary["companies_inserted" if inserted else "companies_updated"] += 1
+        if len(ops) >= _BATCH_SIZE:
+            await _flush()
+
+    await _flush()
 
     total_new = summary["companies_inserted"] + summary["llps_inserted"]
     total_upd = summary["companies_updated"] + summary["llps_updated"]
     summary["message"] = (
         f"Processed {summary['processed']} rows: {total_new} inserted, "
         f"{total_upd} updated, {summary['rejected_count']} rejected.")
-    logger.info("[csv_upload] %s", summary["message"])
+    logger.info("[csv_upload] %s (total_rows=%s)", summary["message"], summary["total_rows"])
     return summary

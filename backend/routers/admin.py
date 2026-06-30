@@ -63,13 +63,44 @@ async def upload_csv(file: UploadFile = File(...)):
     if not (name.endswith(".csv") or (file.content_type or "") in allowed_types):
         raise HTTPException(status_code=400,
                             detail="Please upload a .csv file (CIN/LLPIN per row)")
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
-    if len(content) > 150 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large (max 150 MB)")
+
+    import os
+    import tempfile
     from services.csv_upload import process_upload
-    return await process_upload(db, content)
+
+    max_bytes = 150 * 1024 * 1024
+    tmp_path = None
+    try:
+        # Stream the upload to disk in 1MB chunks (bounded memory, any file size).
+        written = 0
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".csv") as tmp:
+            tmp_path = tmp.name
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(status_code=413,
+                                        detail="File too large (max 150 MB)")
+                tmp.write(chunk)
+        if written == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+        # Stream-parse from disk (csv reads line-by-line; memory stays bounded).
+        with open(tmp_path, "r", encoding="utf-8-sig", errors="replace", newline="") as fh:
+            result = await process_upload(db, fh)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+    if result.get("total_rows", 0) == 0 and not result.get("ok", True):
+        raise HTTPException(status_code=400,
+                            detail=result.get("message", "Could not parse CSV"))
+    return result
 
 
 @router.post("/purge-sample")
