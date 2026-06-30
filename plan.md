@@ -1,12 +1,16 @@
-# CorpIntel India — MCA Enrichment Batch Runner (Human-in-the-loop) Plan (UPDATED)
+# CorpIntel India — MCA Enrichment Batch Runner (Human-in-the-loop) + LLP Support Plan (UPDATED)
 
 ## Objectives
 - Deliver a **manual, resumable, session-aware** MCA enrichment runner that **never auto-loops** and enforces guardrails (**3 sessions/day**, **≥3h gap**, **≤110m budget**, circuit breakers for **CAPTCHA/session expiry**).
 - Provide an **Admin Enrichment Dashboard** to monitor queue progress and guide the operator with **copy/paste terminal commands**.
 - Ensure **all background/scheduled MCA enrichment is disabled** (prevents bans and preserves queue accuracy). Background jobs may continue for **classification only**.
-- Validate guardrails and UI end-to-end; ship a production-ready feature set.
+- Extend the platform to support **LLPs alongside Companies** via a generic identifier model (CIN/LLPIN), starting with **Phase 1: CSV upload + entity schema**.
+- Maintain backward compatibility: existing “company” flows that query by `cin` continue to work for Company docs.
 
-**Current status:** ✅ **ALL PHASES COMPLETED** (backend + frontend wired, manual guardrails verified, full regression tests passed).
+**Current status:**
+- ✅ **MCA human-in-the-loop enrichment runner**: complete, tested, production-ready.
+- ✅ **LLP Support — Phase 1 (CSV upload + entity data model)**: complete, tested.
+- ⏳ **LLP Support — Phase 2 (entity-aware enrichment + frontend & API updates)**: pending **user review/go-ahead**.
 
 ---
 
@@ -59,7 +63,6 @@
    - Removed background calls to `enrich_company()`.
    - `enrichment_worker` is now **classification-only**.
    - Confirmed via a fresh job run entry: `enrich_attempts=0` with note `auto MCA enrichment disabled (manual loop only)`.
-   - Removed the unused `enrich_company` import.
 
 **Exit criteria (met)**
 - ✅ Endpoint exists and returns required JSON.
@@ -72,8 +75,8 @@
    - Progress bar for priority cohort.
    - Governance panel with **Ready** / **Cooldown** states.
    - Copy-command helper (cookie export, run session, retry failed).
-   - Clipboard copy is wrapped with **try/catch + fallback** to avoid runtime overlays in restricted clipboard contexts.
-   - 5-step instruction panel for safe operation.
+   - Clipboard copy wrapped with **try/catch + fallback** to avoid runtime overlays.
+   - 5-step instruction panel.
    - Recent sessions table + stop-reason badges.
    - Hard-stop banner for `captcha`, `session_expired`, `consecutive_failures`.
 2. **Added API helper** in `frontend/src/lib/api.js`:
@@ -82,9 +85,11 @@
    - Protected route: `/admin/enrichment` in `App.js`.
    - Sidebar nav item: `nav-admin-enrichment` in `lib/nav.js`.
    - Added testId registry: `constants/testIds/adminEnrichment.js` and re-exported in `constants/testIds/index.js`.
-4. **Verification**
-   - Build check (esbuild) ✅
-   - Visual verification (screenshot) ✅
+
+**Verification**
+- Build check (esbuild) ✅
+- Visual verification (screenshot) ✅
+- `testing_agent_v3` iteration_2 ✅ (backend + frontend 100%)
 
 **Exit criteria (met)**
 - ✅ Admin dashboard loads, renders progress and governance, provides copy commands, and shows instruction panel.
@@ -107,49 +112,166 @@
    - ✅ Retry script guardrail STOP.
 2. **Testing agent run (full regression)**
    - ✅ `testing_agent_v3` results in `/app/test_reports/iteration_2.json`:
-     - Backend: **100% (36/36)** including new endpoint + regressions.
-     - Frontend: **100%** (13/13 required dashboard test IDs + 7/7 regression pages).
-     - Confirmed: copy buttons do not trigger runtime error overlays.
+     - Backend: **100% (36/36)**.
+     - Frontend: **100%**.
 
 **Exit criteria (met)**
 - ✅ All guardrail tests pass.
-- ✅ Full platform regression passes (no MVP breakage).
+- ✅ Full platform regression passes.
+
+---
+
+## LLP SUPPORT — Phase 1 (CSV Upload + Entity Data Model)
+**Goal:** Support importing and storing LLPs alongside Companies without breaking existing CIN-based behavior.
+
+### What changed (implemented + tested)
+#### A) Schema additions (companies collection, backward compatible)
+- Added fields (all docs):
+  - `entity_type`: "Company" | "LLP"
+  - `identifier`: CIN or LLPIN (new primary key)
+  - `identifier_type`: "CIN" | "LLPIN"
+  - `llpin` (for LLP rows)
+  - `total_contribution` (LLP-specific)
+- Kept existing `cin` field populated for Company docs.
+- LLP docs have `cin=null` and are keyed by `identifier` (LLPIN).
+
+#### B) Index + migration strategy (critical)
+- Backfilled all legacy documents (600) to:
+  - `entity_type="Company"`, `identifier=cin`, `identifier_type="CIN"`
+- Converted `cin` unique index to **partial unique**:
+  - unique on `cin` only where `entity_type == "Company"`
+  - prevents collision on LLP docs with `cin=null`
+- Added indexes:
+  - `companies.identifier` unique
+  - `companies.entity_type`
+  - `companies.llpin` (sparse)
+- Added new collection `partners`:
+  - `partners.dpin` unique
+  - `partners.llpin`
+
+#### C) Backend CSV upload service
+- Added `/app/backend/services/csv_upload.py`:
+  - Flexible header aliasing (case/space-insensitive)
+  - Dual CIN/LLPIN validation per spec
+  - Upsert by `identifier`
+  - LLP `total_contribution` → `paid_up_capital` mapping for cohort filtering + store original `total_contribution`
+  - Preserves enrichment/classification state via `$setOnInsert`
+  - Returns summary broken down by entity type:
+    - `companies_inserted`, `companies_updated`, `llps_inserted`, `llps_updated`, `rejected_count`, `rejected_rows` (row numbers + reasons)
+
+#### D) Backend API endpoint
+- Added `POST /api/v1/admin/upload-csv` (multipart form `file`):
+  - 25MB cap
+  - Strictly rejects non-CSV uploads with `400`
+
+#### E) Frontend UI
+- Added a **Data Upload card** to the Admin MCA Enrichment page:
+  - Drag/drop + file picker
+  - Upload action + toast notifications
+  - Result panel with stat pills + rejected-rows table
+  - “CSV template” download
+  - Test IDs added for automation
+
+### Verification (executed)
+- Curl tests: insert/update/reject behavior; LLP mapping verified; indexes verified.
+- UI tests: `set_input_files` + upload + result panel rendering.
+- `testing_agent_v3` iteration_3:
+  - Frontend: 100%
+  - Backend: originally 7/8 due to a LOW validation issue, then ✅ fixed and re-verified (`text/plain` now returns 400).
+- All test-uploaded records cleaned (DB returned to 600 baseline).
+
+**Exit criteria (met)**
+- ✅ Platform stores Company + LLP rows safely with correct uniqueness constraints.
+- ✅ Admin can upload CSV and see a clear summary + rejected rows.
+- ✅ No regressions to existing Company/CIN flows.
+
+---
+
+## LLP SUPPORT — Phase 2 (Pending — awaiting user go-ahead)
+**Goal:** Make the entire platform entity-aware (search, detail pages, enrichment, analytics) while maintaining backward compatibility.
+
+### Backend
+1. **Entity-aware enrichment queue**
+   - Update `services/enrichment_queue.py`:
+     - `get_next_batch(limit=400, entity_type=None)`
+     - `get_failed_batch(limit=400, entity_type=None)`
+     - Include `entity_type` filtering when requested.
+
+2. **Entity-aware MCA scraper**
+   - Update `services/mca_scraper.py`:
+     - Introduce `scrape_entity(identifier, entity_type, cookie)` router.
+     - Keep existing `scrape_company_cin()` logic.
+     - Implement new `scrape_llp(llpin)`:
+       - Research MCA LLP master-data URL/page structure
+       - Parse “Designated Partners”
+       - Save partners to `partners` collection (dpin unique, llpin indexed)
+     - Maintain honest blocked behavior in this environment (stop on CAPTCHA/session expiry).
+
+3. **Companies router adjustments**
+   - Ensure detail lookup can resolve by `identifier` (not only `cin`) so LLP detail pages work.
+   - Add endpoint: `GET /companies/{identifier}/partners`.
+   - Add `entity_type` filter support to list/search endpoints:
+     - `/companies?entity_type=Company|LLP|Both`
+     - advanced search body includes entity_type.
+
+### Frontend (React SPA)
+1. **Search page (`/frontend/src/pages/Search.js`)**
+   - Add entity-type filter: Company | LLP | Both (default Both).
+   - Add entity type badge on result cards:
+     - Company = blue
+     - LLP = purple
+
+2. **Detail page (`/frontend/src/pages/CompanyDetail.js`)**
+   - Route continues as `/company/:cin` but treats param as **identifier**.
+   - If entity is LLP:
+     - Directors tab relabel → “Designated Partners”
+     - Fetch from partners endpoint
+     - Overview shows “Total contribution” instead of paid-up/authorized capital
+
+3. **Analytics (`/frontend/src/pages/Analytics.js`)**
+   - Add Company vs LLP breakdown as a dimension/filter in charts and/or KPI modules.
+
+**Exit criteria (Phase 2)**
+- LLPs are searchable, viewable in detail pages, and display partners.
+- Enrichment runner can enrich both Companies and LLPs (manual cookie + same guardrails).
+- Analytics supports entity-type breakdown.
 
 ---
 
 ## Next Actions (Immediate)
-**None required for implementation. Feature is production-ready.**
-
-Recommended operational next steps (human/admin):
-1. Run enrichment sessions **manually** only when you have a fresh `MCA_SESSION_COOKIE`.
-2. Use the **Admin → MCA Enrichment** dashboard for:
-   - remaining count
-   - next allowed session time
-   - copy/paste commands
-   - recent session stop reasons
+1. **User review** of Phase 1 LLP upload + schema changes.
+2. If approved: start **LLP Phase 2** (entity-aware enrichment + API + frontend).
 
 ---
 
 ## Success Criteria
+### Enrichment runner
 - ✅ **No automatic MCA scraping** runs in APScheduler; classification continues.
 - ✅ Manual scripts enforce: **cookie required**, **3/day cap**, **≥3h gap**, **≤110m budget**, stop on CAPTCHA/session expiry.
 - ✅ Admin dashboard provides **clear progress + safe operating instructions + copy commands**.
-- ✅ Full regression tests pass (backend + frontend).
+- ✅ Full regression tests pass.
+
+### LLP support
+- ✅ Phase 1: import + schema + indexes + UI upload complete and safe.
+- ⏳ Phase 2: end-to-end entity-aware product behavior (search/detail/analytics/enrichment).
 
 ---
 
 ## Notes / Artifacts
 - Backend progress endpoint: `GET /api/v1/admin/enrichment-progress`
+- CSV upload endpoint: `POST /api/v1/admin/upload-csv` (multipart form-data: `file`)
 - Dashboard route: `/admin/enrichment` (protected)
-- Key files:
-  - `/app/backend/services/run_enrichment_session.py`
-  - `/app/backend/services/retry_failed_enrichment.py`
-  - `/app/backend/services/session_tracker.py`
-  - `/app/backend/services/enrichment_queue.py`
-  - `/app/backend/services/scheduler.py`
-  - `/app/backend/routers/admin.py`
-  - `/app/frontend/src/pages/AdminEnrichment.js`
-  - `/app/frontend/src/lib/api.js`
-  - `/app/frontend/src/lib/nav.js`
-- Test report: `/app/test_reports/iteration_2.json`
-- Note: testing agent updated `backend_test.py` (test harness only).
+- Key new/updated files:
+  - `/app/backend/services/csv_upload.py`
+  - `/app/backend/services/ingestion.py` (ensure_indexes migration + entity-aware indexes)
+  - `/app/backend/routers/admin.py` (upload endpoint)
+  - `/app/backend/models.py` (Partner + upload models)
+  - `/app/frontend/src/components/admin/DataUploadCard.js`
+  - `/app/frontend/src/pages/AdminEnrichment.js` (upload card embedded)
+  - `/app/frontend/src/lib/api.js` (uploadCsv helper)
+  - `/app/frontend/src/constants/testIds/adminEnrichment.js` (DATA_UPLOAD test IDs)
+- Test reports:
+  - `/app/test_reports/iteration_2.json` (enrichment runner/dashboard)
+  - `/app/test_reports/iteration_3.json` (CSV upload + LLP Phase 1; low-priority bug fixed afterward)
+
+**Implementation note:** The original LLP addendum referenced Next.js/TS paths; implementation was correctly adapted to this project’s actual **React SPA (JS)** structure and backend `db.py`/`services/ingestion.py` indexing system.

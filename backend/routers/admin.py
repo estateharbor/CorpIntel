@@ -59,8 +59,10 @@ async def upload_csv(file: UploadFile = File(...)):
     upserts by the generic identifier and returns an entity-type breakdown.
     """
     name = (file.filename or "").lower()
-    if not (name.endswith(".csv") or (file.content_type or "").startswith("text")):
-        raise HTTPException(status_code=400, detail="Please upload a .csv file")
+    allowed_types = {"text/csv", "application/csv", "application/vnd.ms-excel"}
+    if not (name.endswith(".csv") or (file.content_type or "") in allowed_types):
+        raise HTTPException(status_code=400,
+                            detail="Please upload a .csv file (CIN/LLPIN per row)")
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")

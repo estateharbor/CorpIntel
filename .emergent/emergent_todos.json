@@ -32,7 +32,7 @@
     "status": "completed"
   },
   {
-    "content": "Test: testing_agent_v3 for CSV upload (backend) + admin upload card (frontend); fix bugs",
-    "status": "in_progress"
+    "content": "Test: testing_agent_v3 for CSV upload + admin upload card; fix reported bugs (LOW: non-csv 400 validation FIXED)",
+    "status": "completed"
   }
 ]
