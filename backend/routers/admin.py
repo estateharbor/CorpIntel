@@ -72,6 +72,41 @@ async def upload_csv(file: UploadFile = File(...)):
     return await process_upload(db, content)
 
 
+@router.post("/purge-sample")
+async def purge_sample(disable_reseed: bool = True):
+    """Delete all labeled SAMPLE data (companies + their directors / enrichment /
+    alert logs) for a clean slate before importing real data.
+
+    By default also sets a persistent marker so the startup auto-seeder will NOT
+    re-create sample data on the next restart.
+    """
+    sample_cins = await db.companies.distinct("cin", {"data_source": "sample"})
+    comp = await db.companies.delete_many({"data_source": "sample"})
+    deleted_dirs = deleted_enr = deleted_log = 0
+    if sample_cins:
+        deleted_dirs = (await db.directors.delete_many({"cin": {"$in": sample_cins}})).deleted_count
+        deleted_enr = (await db.enrichment.delete_many({"cin": {"$in": sample_cins}})).deleted_count
+        deleted_log = (await db.alerts_log.delete_many({"cin": {"$in": sample_cins}})).deleted_count
+
+    if disable_reseed:
+        await db.system_config.update_one(
+            {"_id": "ingest"},
+            {"$set": {"sample_seed_disabled": True, "updated_at": datetime.now(timezone.utc)}},
+            upsert=True,
+        )
+
+    remaining = await db.companies.count_documents({})
+    return {
+        "ok": True,
+        "deleted_companies": comp.deleted_count,
+        "deleted_directors": deleted_dirs,
+        "deleted_enrichment": deleted_enr,
+        "deleted_alerts_log": deleted_log,
+        "reseed_disabled": disable_reseed,
+        "remaining_companies": remaining,
+    }
+
+
 @router.post("/ingest/incremental")
 async def ingest_incremental():
     """Trigger the last-7-days incremental fetch (MCA). Honest status returned."""

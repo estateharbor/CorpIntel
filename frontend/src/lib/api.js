@@ -64,6 +64,9 @@ export const uploadCsv = (file) => {
     .then((r) => r.data);
 };
 
+export const purgeSampleData = () =>
+  api.post("/admin/purge-sample").then((r) => r.data);
+
 export const getPlans = () => api.get("/payments/plans").then((r) => r.data);
 export const createCheckout = (plan_id) =>
   api.post("/payments/checkout", { plan_id, origin_url: window.location.origin }).then((r) => r.data);

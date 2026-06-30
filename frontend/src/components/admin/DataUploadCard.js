@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import {
   UploadCloud, FileSpreadsheet, X, CheckCircle2, AlertTriangle, Download,
-  Loader2, Building2, Users,
+  Loader2, Building2, Users, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -11,7 +11,12 @@ import { Separator } from "@/components/ui/separator";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { uploadCsv } from "@/lib/api";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { uploadCsv, purgeSampleData } from "@/lib/api";
 import { DATA_UPLOAD as T } from "@/constants/testIds";
 
 const TEMPLATE_HEADER =
@@ -56,6 +61,7 @@ export function DataUploadCard({ onUploaded }) {
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
   const [dragOver, setDragOver] = useState(false);
+  const [purging, setPurging] = useState(false);
   const inputRef = useRef(null);
 
   const pickFile = (f) => {
@@ -98,6 +104,21 @@ export function DataUploadCard({ onUploaded }) {
     }
   };
 
+  const purge = async () => {
+    setPurging(true);
+    try {
+      const res = await purgeSampleData();
+      toast.success(`Sample data cleared: ${res.deleted_companies} companies removed`);
+      setResult(null);
+      if (onUploaded) onUploaded();
+    } catch (e) {
+      const detail = e?.response?.data?.detail || "Could not clear sample data";
+      toast.error(typeof detail === "string" ? detail : "Could not clear sample data");
+    } finally {
+      setPurging(false);
+    }
+  };
+
   return (
     <Card className="p-5" data-testid={T.card}>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
@@ -109,6 +130,7 @@ export function DataUploadCard({ onUploaded }) {
             CSV with a CIN or LLPIN per row. Existing records are updated (matched by identifier); new ones are added.
           </p>
         </div>
+        <div className="flex items-center gap-2 flex-wrap">
         <Button
           variant="outline"
           size="sm"
@@ -117,6 +139,41 @@ export function DataUploadCard({ onUploaded }) {
         >
           <Download className="h-4 w-4 mr-2" /> CSV template
         </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={purging}
+              className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+              data-testid={T.purgeButton}
+            >
+              {purging ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+              Clear sample data
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Clear all sample data?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This permanently deletes all demo/sample companies and their directors,
+                enrichment and alert records, giving you a clean slate for your own upload.
+                Auto-reseeding is disabled so it won't come back. Your uploaded data is not affected.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={purge}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid={T.purgeConfirmButton}
+              >
+                Yes, clear sample data
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        </div>
       </div>
 
       {/* Dropzone */}

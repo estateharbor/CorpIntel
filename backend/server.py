@@ -114,8 +114,12 @@ async def _ensure_demo_user():
 @app.on_event("startup")
 async def on_startup():
     await ensure_indexes(db)
+    cfg = await db.system_config.find_one({"_id": "ingest"}) or {}
+    seeding_disabled = bool(cfg.get("sample_seed_disabled"))
     count = await db.companies.count_documents({})
-    if count < 600:
+    if seeding_disabled:
+        logger.info("Sample auto-seed DISABLED by admin marker; skipping (companies=%s).", count)
+    elif count < 600:
         client_dg = DataGovInClient()
         if client_dg.configured:
             logger.info("DATA_GOV_API_KEY set -> seeding from data.gov.in")
