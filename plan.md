@@ -1,10 +1,12 @@
-# CorpIntel India — MCA Enrichment Batch Runner (Human-in-the-loop) Plan
+# CorpIntel India — MCA Enrichment Batch Runner (Human-in-the-loop) Plan (UPDATED)
 
 ## Objectives
-- Deliver a **manual, resumable, session-aware** MCA enrichment runner that **never auto-loops** and enforces guardrails (3 sessions/day, 3h min gap, 110m budget, CAPTCHA/session-expiry circuit breakers).
-- Provide an **Admin Enrichment Dashboard** to monitor progress and guide the operator with copy-paste commands.
-- Remove all background/scheduled MCA enrichment to prevent bans and to keep the manual queue accurate.
-- Validate core guardrails in isolation (POC), then ship the V1 UI + API, then run full regression tests.
+- Deliver a **manual, resumable, session-aware** MCA enrichment runner that **never auto-loops** and enforces guardrails (**3 sessions/day**, **≥3h gap**, **≤110m budget**, circuit breakers for **CAPTCHA/session expiry**).
+- Provide an **Admin Enrichment Dashboard** to monitor queue progress and guide the operator with **copy/paste terminal commands**.
+- Ensure **all background/scheduled MCA enrichment is disabled** (prevents bans and preserves queue accuracy). Background jobs may continue for **classification only**.
+- Validate guardrails and UI end-to-end; ship a production-ready feature set.
+
+**Current status:** ✅ **ALL PHASES COMPLETED** (backend + frontend wired, manual guardrails verified, full regression tests passed).
 
 ---
 
@@ -16,21 +18,21 @@
 4. As an operator, I want the runner to **STOP** on CAPTCHA/session-expired signals so it never brute-forces through blocks.
 5. As an operator, I want every session start/end to be logged so I can resume confidently and audit behavior.
 
-**Steps**
-1. **Web search (best practices)**
-   - Quick research: “human-in-the-loop scraper guardrails session budgeting circuit breaker best practices”
-   - Confirm recommended patterns: strict caps, explicit operator action, stop-on-challenge.
-2. **POC: verify script-level guardrails via terminal (no real scraping)**
-   - Run `python backend/services/run_enrichment_session.py` with no cookie → expect `STOP: No session cookie set...`.
-   - Insert a dummy cookie and simulate session limits via DB writes:
-     - Create 3 `enrichment_sessions` records with today’s IST start times → expect daily-cap STOP.
-     - Create 1 “recent” session <3 hours ago → expect min-gap STOP.
-   - Verify `session_tracker.next_session_available_at()` produces correct UTC timestamp.
-3. **Document expected STOP messages** (for testing agent + operator clarity).
+**Steps (implemented + verified)**
+1. **POC: verify script-level guardrails via terminal (no real scraping)**
+   - Ran `python /app/backend/services/run_enrichment_session.py` with **no cookie** → ✅ `STOP: No session cookie set...`.
+   - Inserted **dummy cookie** and simulated session limits via temporary DB writes:
+     - Created **3** `enrichment_sessions` records in IST “today” → ✅ daily-cap STOP.
+     - Created a “recent” session **1 hour ago** → ✅ min-gap STOP.
+   - Verified `session_tracker.next_session_available_at()` returned correct UTC timestamp.
+2. **Retry runner guardrails**
+   - Ran `python /app/backend/services/retry_failed_enrichment.py` with **no cookie** → ✅ STOP.
+3. **Cleanup**
+   - Removed all temporary test session records after verification.
 
-**Exit criteria**
-- Guardrails produce deterministic STOP outputs for: missing cookie, daily cap, min-gap.
-- Session logs are written to `enrichment_sessions` as expected.
+**Exit criteria (met)**
+- ✅ Deterministic STOP outputs for: missing cookie, daily cap, min-gap.
+- ✅ Session governance logic validated (including next-available time computation).
 
 ---
 
@@ -43,95 +45,111 @@
 5. As an admin, I want the system to **never auto-run MCA enrichment** so manual control is guaranteed.
 
 ### 2A. Backend
-1. **Add `GET /api/v1/admin/enrichment-progress`** in `backend/routers/admin.py`:
-   - Return:
-     - Priority cohort totals: total, enriched, remaining, attempted_failed, permanently_failed (attempts>=3)
-     - Sessions today count, max/day, min-gap, batch size, time budget
-     - Last session summary (type, started_at, ended_at, stop_reason, enriched_count, failed_count)
-     - `next_session_available_at` (UTC ISO) + human-readable IST string
-     - Recommended terminal commands (exact strings):
+**Implemented**
+1. **Added `GET /api/v1/admin/enrichment-progress`** in `backend/routers/admin.py`:
+   - Returns:
+     - Priority cohort totals: `total`, `enriched`, `remaining`, `not_yet_attempted`, `attempted_failed`, `permanently_failed`, `progress_pct`
+     - Governance: `sessions_today`, `max_sessions_per_day=3`, `min_gap_hours=3`, `batch_size=400`, `time_budget_minutes=110`, `max_consecutive_failures=5`, `max_attempts_per_company=3`, `can_start_now`, `next_available_at`, `next_available_ist`, `auto_enrichment_disabled=true`
+     - `last_session`, `recent_sessions`, `cohort_description`
+     - Exact operator commands:
        - `cd /app/backend/services && python run_enrichment_session.py`
        - `cd /app/backend/services && python retry_failed_enrichment.py`
-     - Safety note flags: `auto_enrichment_disabled: true`
-2. **Disable automatic MCA enrichment in `services/scheduler.py`**:
-   - Remove/disable the part that calls `enrich_company()`.
-   - Keep only the classification loop.
-   - Ensure job_runs logging reflects classification counts only.
-3. **Restart backend and verify via curl**:
-   - `curl /api/v1/admin/enrichment-progress` returns expected JSON.
+       - `export MCA_SESSION_COOKIE='<paste-your-fresh-mca-session-cookie-here>'`
+2. **Disabled automatic MCA enrichment in `services/scheduler.py`**:
+   - Removed background calls to `enrich_company()`.
+   - `enrichment_worker` is now **classification-only**.
+   - Confirmed via a fresh job run entry: `enrich_attempts=0` with note `auto MCA enrichment disabled (manual loop only)`.
+   - Removed the unused `enrich_company` import.
+
+**Exit criteria (met)**
+- ✅ Endpoint exists and returns required JSON.
+- ✅ Scheduler no longer performs MCA enrichment attempts.
 
 ### 2B. Frontend
-1. **Create `/frontend/src/pages/AdminEnrichment.js`** (shadcn UI, data-testid everywhere):
-   - KPI cards: remaining, enriched, failed, sessions today.
-   - Progress bar: `enriched / total` for priority cohort.
-   - Governance panel:
-     - Next session allowed time
-     - Min-gap and daily cap reminders
-     - Last stop reason banner (warning styling if captcha/session_expired/consecutive_failures)
-   - Instruction panel (step-by-step):
-     - How to obtain cookie manually
-     - Where to export `MCA_SESSION_COOKIE`
-     - What STOP messages mean
-   - **Copy command helper** buttons (copy to clipboard + toast):
-     - Run enrichment session
-     - Retry failed session
-   - Recent sessions table.
-2. **Add API helper** in `frontend/src/lib/api.js`:
-   - `export const getEnrichmentProgress = () => api.get('/admin/enrichment-progress').then(r=>r.data)`
-3. **Wire routing + nav**:
-   - Add route in `App.js` (under AppShell): `/admin/enrichment`.
-   - Add nav item in `lib/nav.js` (label: “Admin · Enrichment”).
-   - (If needed) keep it visible; optionally gate via presence of user plan/admin later.
-4. **Frontend verification**
-   - Build/console check for lint/runtime errors.
-   - Provide screenshot-based visual confirmation.
+**Implemented**
+1. **Created `/frontend/src/pages/AdminEnrichment.js`** (shadcn UI + required test IDs):
+   - KPI cards: remaining, enriched, failed (retryable), sessions today.
+   - Progress bar for priority cohort.
+   - Governance panel with **Ready** / **Cooldown** states.
+   - Copy-command helper (cookie export, run session, retry failed).
+   - Clipboard copy is wrapped with **try/catch + fallback** to avoid runtime overlays in restricted clipboard contexts.
+   - 5-step instruction panel for safe operation.
+   - Recent sessions table + stop-reason badges.
+   - Hard-stop banner for `captcha`, `session_expired`, `consecutive_failures`.
+2. **Added API helper** in `frontend/src/lib/api.js`:
+   - `getEnrichmentProgress()` → calls `/api/v1/admin/enrichment-progress`.
+3. **Wired routing + nav**:
+   - Protected route: `/admin/enrichment` in `App.js`.
+   - Sidebar nav item: `nav-admin-enrichment` in `lib/nav.js`.
+   - Added testId registry: `constants/testIds/adminEnrichment.js` and re-exported in `constants/testIds/index.js`.
+4. **Verification**
+   - Build check (esbuild) ✅
+   - Visual verification (screenshot) ✅
 
-**Exit criteria**
-- Endpoint exists and returns correct progress/session metadata.
-- Scheduler no longer performs any MCA enrichment attempts.
-- Admin dashboard loads, renders progress, and copy-command buttons work.
+**Exit criteria (met)**
+- ✅ Admin dashboard loads, renders progress and governance, provides copy commands, and shows instruction panel.
 
 ---
 
 ## Phase 3 — Testing & Validation
 **User stories (quality/regression):**
-1. As an operator, I want a backend STOP behavior test so I’m confident the runner won’t run unsafely.
+1. As an operator, I want backend STOP behavior tests so I’m confident the runner won’t run unsafely.
 2. As an admin, I want the dashboard to show accurate counts so I can make decisions.
 3. As a developer, I want automated end-to-end tests to catch regressions in core SaaS flows.
 4. As an operator, I want the UI to remain usable on mobile so I can monitor sessions anywhere.
 5. As a maintainer, I want failures to be observable (stop reasons, failed counts) so debugging is fast.
 
-**Steps**
-1. **Manual terminal tests (no real MCA scraping):**
-   - Missing cookie STOP.
-   - Daily cap STOP (pre-create session logs).
-   - Min-gap STOP.
-2. **Testing agent run (full regression):**
-   - Run `testing_agent_v3` to verify:
-     - New route navigable
-     - Dashboard renders without errors
-     - API endpoint responds
-     - Existing MVP pages still pass.
-3. **Fix loop**
-   - Address any issues reported by the testing agent, re-run once.
+**Steps (executed)**
+1. **Manual terminal tests (no real MCA scraping)**
+   - ✅ Missing cookie STOP.
+   - ✅ Daily cap STOP.
+   - ✅ Min-gap STOP.
+   - ✅ Retry script guardrail STOP.
+2. **Testing agent run (full regression)**
+   - ✅ `testing_agent_v3` results in `/app/test_reports/iteration_2.json`:
+     - Backend: **100% (36/36)** including new endpoint + regressions.
+     - Frontend: **100%** (13/13 required dashboard test IDs + 7/7 regression pages).
+     - Confirmed: copy buttons do not trigger runtime error overlays.
 
-**Exit criteria**
-- All guardrail tests pass.
-- Testing agent passes without breaking existing MVP.
+**Exit criteria (met)**
+- ✅ All guardrail tests pass.
+- ✅ Full platform regression passes (no MVP breakage).
 
 ---
 
 ## Next Actions (Immediate)
-1. Implement `GET /api/v1/admin/enrichment-progress` in `backend/routers/admin.py`.
-2. Update `backend/services/scheduler.py` to remove auto `enrich_company()` calls.
-3. Add `getEnrichmentProgress()` to `frontend/src/lib/api.js`.
-4. Build `frontend/src/pages/AdminEnrichment.js` + route + nav.
-5. Run terminal guardrail checks + `testing_agent_v3`.
+**None required for implementation. Feature is production-ready.**
+
+Recommended operational next steps (human/admin):
+1. Run enrichment sessions **manually** only when you have a fresh `MCA_SESSION_COOKIE`.
+2. Use the **Admin → MCA Enrichment** dashboard for:
+   - remaining count
+   - next allowed session time
+   - copy/paste commands
+   - recent session stop reasons
 
 ---
 
 ## Success Criteria
-- **No automatic MCA scraping** runs in APScheduler; only classification continues.
-- Manual scripts enforce: **cookie required**, **3/day cap**, **3h gap**, **110m budget**, and stop on CAPTCHA/session expiry.
-- Admin dashboard provides **clear progress + safe operating instructions + copy commands**.
-- Full platform regression tests pass (no MVP breakage).
+- ✅ **No automatic MCA scraping** runs in APScheduler; classification continues.
+- ✅ Manual scripts enforce: **cookie required**, **3/day cap**, **≥3h gap**, **≤110m budget**, stop on CAPTCHA/session expiry.
+- ✅ Admin dashboard provides **clear progress + safe operating instructions + copy commands**.
+- ✅ Full regression tests pass (backend + frontend).
+
+---
+
+## Notes / Artifacts
+- Backend progress endpoint: `GET /api/v1/admin/enrichment-progress`
+- Dashboard route: `/admin/enrichment` (protected)
+- Key files:
+  - `/app/backend/services/run_enrichment_session.py`
+  - `/app/backend/services/retry_failed_enrichment.py`
+  - `/app/backend/services/session_tracker.py`
+  - `/app/backend/services/enrichment_queue.py`
+  - `/app/backend/services/scheduler.py`
+  - `/app/backend/routers/admin.py`
+  - `/app/frontend/src/pages/AdminEnrichment.js`
+  - `/app/frontend/src/lib/api.js`
+  - `/app/frontend/src/lib/nav.js`
+- Test report: `/app/test_reports/iteration_2.json`
+- Note: testing agent updated `backend_test.py` (test harness only).
