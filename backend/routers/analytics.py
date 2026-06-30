@@ -40,8 +40,16 @@ async def summary(city: Optional[str] = Query(None)):
     active = by_status.get("Active", 0)
     struck = by_status.get("Struck Off", 0)
     enriched = await db.companies.count_documents({**match, "enriched": True})
+    # by entity type (Company vs LLP)
+    by_entity_type = {}
+    async for d in db.companies.aggregate([{"$match": match},
+                                           {"$group": {"_id": "$entity_type", "n": {"$sum": 1}}}]):
+        by_entity_type[d["_id"] or "Company"] = d["n"]
     return {
         "total": total, "by_city": by_city, "by_status": by_status,
+        "by_entity_type": by_entity_type,
+        "companies_count": by_entity_type.get("Company", 0),
+        "llps_count": by_entity_type.get("LLP", 0),
         "new_this_week": new_week, "top_sector": top_sector,
         "active": active, "struck_off": struck,
         "active_ratio": round(active / total * 100, 1) if total else 0,

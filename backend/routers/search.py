@@ -28,8 +28,10 @@ async def quick_search(q: str = Query("", description="search text"),
     if not q:
         return {"results": [], "suggestions": []}
     res = await run_company_query(db, {"search": q}, page=1, limit=limit)
-    suggestions = [{"cin": c["cin"], "name": c["name"], "city": c.get("city"),
-                    "sector": c.get("sector")} for c in res["results"]]
+    suggestions = [{"cin": c.get("identifier") or c.get("cin"), "name": c["name"],
+                    "entity_type": c.get("entity_type", "Company"),
+                    "city": c.get("city"), "sector": c.get("sector")}
+                   for c in res["results"]]
     return {"results": res["results"], "suggestions": suggestions, "total": res["total"]}
 
 

@@ -35,7 +35,7 @@ load_dotenv(_BACKEND / ".env")
 from enrichment_queue import (count_remaining, get_next_batch, mark_enriched,
                               mark_failed, save_enrichment_data)
 from mca_scraper import (CaptchaDetectedException, ScrapeResult,
-                         SessionExpiredException, scrape_company)
+                         SessionExpiredException, scrape_entity)
 import session_tracker as st
 
 # ===================== CLAMPED CONFIG (safety guardrails) =====================
@@ -95,7 +95,7 @@ def run_session(session_type: str = "enrichment", batch_fn=get_next_batch) -> No
           f"(budget {SESSION_TIME_BUDGET_MIN} min, batch {BATCH_SIZE})")
 
     batch = batch_fn(limit=BATCH_SIZE)
-    print(f"Loaded {len(batch)} companies into this session's batch.")
+    print(f"Loaded {len(batch)} entities (Companies + LLPs) into this session's batch.")
 
     consecutive_failures = 0
     enriched_count = 0
@@ -128,33 +128,40 @@ def run_session(session_type: str = "enrichment", batch_fn=get_next_batch) -> No
                   f"before re-running.")
             break
 
-        cin = company.get("cin")
+        ident = company.get("identifier") or company.get("cin")
+        entity_type = company.get("entity_type", "Company")
+        kind = "LLP" if entity_type == "LLP" else "Company"
         try:
-            result: ScrapeResult = scrape_company(cin, cookie=cookie)
+            result: ScrapeResult = scrape_entity(ident, entity_type, cookie=cookie)
 
             if result.success:
-                save_enrichment_data(cin, result.data)
-                mark_enriched(cin)
+                save_enrichment_data(ident, result.data, entity_type)
+                mark_enriched(ident)
                 enriched_count += 1
                 consecutive_failures = 0
-                print(f"  [OK]   {cin} enriched "
-                      f"(directors={len(result.data.get('directors', []))}, "
-                      f"charges={len(result.data.get('charges', []))})")
+                if entity_type == "LLP":
+                    print(f"  [OK]   {ident} ({kind}) enriched "
+                          f"(partners={len(result.data.get('partners', []))}, "
+                          f"charges={len(result.data.get('charges', []))})")
+                else:
+                    print(f"  [OK]   {ident} ({kind}) enriched "
+                          f"(directors={len(result.data.get('directors', []))}, "
+                          f"charges={len(result.data.get('charges', []))})")
             else:
-                mark_failed(cin, result.error or "unknown error")
+                mark_failed(ident, result.error or "unknown error")
                 failed_count += 1
                 consecutive_failures += 1
-                print(f"  [FAIL] {cin}: {result.error}")
+                print(f"  [FAIL] {ident} ({kind}): {result.error}")
 
         except CaptchaDetectedException as e:
             stop_reason = "captcha"
             print(f"CAPTCHA re-triggered ({e}). Stopping session immediately. "
-                  f"Enriched {enriched_count} companies before this.")
+                  f"Enriched {enriched_count} entities before this.")
             break
         except SessionExpiredException as e:
             stop_reason = "session_expired"
             print(f"Session expired ({e}). Stopping session immediately. "
-                  f"Enriched {enriched_count} companies before this.")
+                  f"Enriched {enriched_count} entities before this.")
             break
 
         # --- Human-like randomized delay between requests ---

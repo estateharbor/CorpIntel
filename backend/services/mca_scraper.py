@@ -39,6 +39,9 @@ _USER_AGENT = (
 # MCA company master / signatory endpoints (best-effort; real flow is POST-based)
 MCA_MASTER_URL = "https://www.mca.gov.in/mcafoportal/viewCompanyMasterData.do"
 MCA_SIGNATORY_URL = "https://www.mca.gov.in/mcafoportal/viewSignatoryDetails.do"
+# LLP master data has a distinct portal endpoint + page structure (Designated
+# Partners instead of Directors).
+MCA_LLP_MASTER_URL = "https://www.mca.gov.in/mcafoportal/viewLLPMasterData.do"
 
 _CAPTCHA_MARKERS = ("captcha", "recaptcha", "enter the characters",
                     "verification code", "are you human", "g-recaptcha")
@@ -172,3 +175,105 @@ def scrape_company(cin: str, cookie: Optional[str] = None) -> ScrapeResult:
     if not data:
         return ScrapeResult(False, error="no parsable enrichment data on page")
     return ScrapeResult(True, data=data)
+
+
+
+def _parse_llp_page(html: str, llpin: str) -> Optional[dict]:
+    """Parse an MCA LLP master-data page into partners / charges / filings.
+
+    LLP pages expose 'Designated Partners' (DPIN) rather than company
+    'Directors' (DIN); the table structure otherwise mirrors the company flow.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    data: dict = {"partners": [], "charges": [], "filings": []}
+
+    for table in soup.find_all("table"):
+        headers = " ".join(th.get_text(strip=True).lower()
+                            for th in table.find_all("th"))
+        rows = table.find_all("tr")
+        if ("designated partner" in headers or "dpin" in headers
+                or ("partner" in headers and "name" in headers)):
+            for tr in rows:
+                cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+                if len(cells) >= 2 and cells[0] and cells[0].lower() != "dpin":
+                    designation = cells[2] if len(cells) > 2 else "Designated Partner"
+                    data["partners"].append({
+                        "dpin": cells[0],
+                        "name": cells[1],
+                        "designation": designation or "Designated Partner",
+                        "is_active": True,
+                    })
+        elif "charge" in headers:
+            for tr in rows:
+                cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+                if len(cells) >= 2 and cells[0]:
+                    data["charges"].append({
+                        "charge_id": cells[0],
+                        "amount": _num(cells[1]) if len(cells) > 1 else None,
+                        "holder": cells[2] if len(cells) > 2 else None,
+                        "created": cells[3] if len(cells) > 3 else None,
+                    })
+        elif "form" in headers or "filing" in headers:
+            for tr in rows:
+                cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+                if len(cells) >= 2 and cells[0]:
+                    data["filings"].append({
+                        "form_type": cells[0],
+                        "filing_date": cells[1] if len(cells) > 1 else None,
+                        "status": cells[2] if len(cells) > 2 else "Filed",
+                    })
+
+    if not (data["partners"] or data["charges"] or data["filings"]):
+        return None
+    return data
+
+
+def scrape_llp(llpin: str, cookie: Optional[str] = None) -> ScrapeResult:
+    """Attempt to enrich a single LLPIN from MCA's LLP master-data view.
+
+    Parallel to scrape_company but targets the LLP portal endpoint and parses
+    Designated Partners. Same block/expiry semantics (raises Captcha/Session
+    exceptions so the session runner halts).
+    """
+    if not ENRICHMENT_ENABLED:
+        return ScrapeResult(False, error="ENRICHMENT_ENABLED is false")
+
+    cookie = cookie or MANUAL_SESSION_COOKIE
+    if not cookie:
+        raise SessionExpiredException("No MCA session cookie provided")
+
+    headers = {
+        "User-Agent": _USER_AGENT,
+        "Cookie": cookie,
+        "Accept": "text/html,application/xhtml+xml",
+        "Referer": "https://www.mca.gov.in/",
+    }
+    url = f"{MCA_LLP_MASTER_URL}?llpID={llpin}"
+    try:
+        with httpx.Client(timeout=25, follow_redirects=True, headers=headers) as client:
+            resp = client.get(url)
+    except httpx.RequestError as e:
+        return ScrapeResult(False, error=f"request error: {e}")
+
+    body_lower = (resp.text or "").lower()
+    _check_block(resp.status_code, body_lower)
+
+    if resp.status_code != 200:
+        return ScrapeResult(False, error=f"HTTP {resp.status_code}")
+
+    try:
+        data = _parse_llp_page(resp.text, llpin)
+    except Exception as e:  # noqa: BLE001
+        return ScrapeResult(False, error=f"parse error: {e}")
+
+    if not data:
+        return ScrapeResult(False, error="no parsable LLP enrichment data on page")
+    return ScrapeResult(True, data=data)
+
+
+def scrape_entity(identifier: str, entity_type: str = "Company",
+                  cookie: Optional[str] = None) -> ScrapeResult:
+    """Entity-type-aware scrape router: Companies -> CIN flow, LLPs -> LLP flow."""
+    if (entity_type or "Company") == "LLP":
+        return scrape_llp(identifier, cookie)
+    return scrape_company(identifier, cookie)

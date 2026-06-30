@@ -24,6 +24,8 @@ export const getCompanies = (params) =>
   api.get("/companies", { params }).then((r) => r.data);
 export const getCompany = (cin) => api.get(`/companies/${cin}`).then((r) => r.data);
 export const getDirectors = (cin) => api.get(`/companies/${cin}/directors`).then((r) => r.data);
+export const getPartners = (identifier) =>
+  api.get(`/companies/${identifier}/partners`).then((r) => r.data);
 export const getCharges = (cin) => api.get(`/companies/${cin}/charges`).then((r) => r.data);
 export const getFilings = (cin) => api.get(`/companies/${cin}/filings`).then((r) => r.data);
 export const getContact = (cin) => api.get(`/companies/${cin}/contact`).then((r) => r.data);

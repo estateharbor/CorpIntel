@@ -32,6 +32,11 @@ def _norm_list(value) -> List[str]:
 
 def build_company_query(p: Dict[str, Any]) -> Dict[str, Any]:
     q: Dict[str, Any] = {}
+    et = p.get("entity_type")
+    if et and str(et).lower() not in ("all", "both"):
+        # Normalise to canonical casing used in storage ("Company" | "LLP").
+        canon = "LLP" if str(et).upper() == "LLP" else "Company"
+        q["entity_type"] = canon
     cities = _norm_list(p.get("city"))
     if cities:
         q["city"] = {"$in": cities}
@@ -66,21 +71,43 @@ def build_company_query(p: Dict[str, Any]) -> Dict[str, Any]:
     s = p.get("search")
     if s:
         rx = {"$regex": re.escape(str(s)), "$options": "i"}
-        q["$or"] = [{"name": rx}, {"cin": rx}, {"principal_activity": rx},
-                    {"sector": rx}]
+        q["$or"] = [{"name": rx}, {"cin": rx}, {"identifier": rx},
+                    {"principal_activity": rx}, {"sector": rx}]
     return q
 
 
 async def attach_director_counts(db, companies: List[dict]) -> List[dict]:
-    cins = [c["cin"] for c in companies]
-    counts: Dict[str, int] = {}
-    if cins:
-        pipeline = [{"$match": {"cin": {"$in": cins}}},
+    """Attach a head-count to each entity.
+
+    For Companies this is the director count (keyed by CIN); for LLPs it is the
+    designated-partner count (keyed by LLPIN/identifier). Stored on the shared
+    ``director_count`` field so existing UI keeps working (label is adjusted
+    per entity type on the frontend).
+    """
+    company_cins = [c["cin"] for c in companies
+                    if c.get("entity_type") != "LLP" and c.get("cin")]
+    llp_ids = [c["identifier"] for c in companies
+               if c.get("entity_type") == "LLP" and c.get("identifier")]
+
+    dcounts: Dict[str, int] = {}
+    if company_cins:
+        pipeline = [{"$match": {"cin": {"$in": company_cins}}},
                     {"$group": {"_id": "$cin", "n": {"$sum": 1}}}]
         async for d in db.directors.aggregate(pipeline):
-            counts[d["_id"]] = d["n"]
+            dcounts[d["_id"]] = d["n"]
+
+    pcounts: Dict[str, int] = {}
+    if llp_ids:
+        pipeline = [{"$match": {"llpin": {"$in": llp_ids}}},
+                    {"$group": {"_id": "$llpin", "n": {"$sum": 1}}}]
+        async for d in db.partners.aggregate(pipeline):
+            pcounts[d["_id"]] = d["n"]
+
     for c in companies:
-        c["director_count"] = counts.get(c["cin"], 0)
+        if c.get("entity_type") == "LLP":
+            c["director_count"] = pcounts.get(c.get("identifier"), 0)
+        else:
+            c["director_count"] = dcounts.get(c.get("cin"), 0)
     return companies
 
 

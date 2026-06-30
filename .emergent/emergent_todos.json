@@ -1,38 +1,54 @@
 [
   {
-    "content": "Backend models.py: add Partner model + entity fields",
+    "content": "Backend common.py: entity_type filter + entity-aware attach_director_counts",
     "status": "completed"
   },
   {
-    "content": "Backend ingestion.py ensure_indexes: backfill migration + partial-unique cin + identifier/entity_type/partners indexes",
+    "content": "Backend companies.py: detail/similar by identifier; GET /{id}/partners; entity_type query param",
     "status": "completed"
   },
   {
-    "content": "Backend services/csv_upload.py: flexible parser + dual validation + upsert + summary",
+    "content": "Backend enrichment_queue.py: entity_type-aware batches; mark by identifier; save partners for LLPs",
     "status": "completed"
   },
   {
-    "content": "Backend admin.py: POST /admin/upload-csv endpoint",
+    "content": "Backend mca_scraper.py: scrape_llp() + scrape_entity() router",
     "status": "completed"
   },
   {
-    "content": "Backend: restart + curl test upload + verify indexes/backfill",
+    "content": "Backend run_enrichment_session.py: entity-aware scrape_entity + identifier persistence",
     "status": "completed"
   },
   {
-    "content": "Frontend api.js: uploadCsv(file) helper (multipart)",
+    "content": "Backend analytics.py by_entity_type + models entity_type + search router",
     "status": "completed"
   },
   {
-    "content": "Frontend AdminEnrichment: Data Upload card (dropzone, upload, summary, template download) + testIds",
+    "content": "Backend: restart + curl test (LLP detail, /partners, entity_type filter, analytics) - PASSED",
     "status": "completed"
   },
   {
-    "content": "Frontend: esbuild check + screenshot verify upload card",
+    "content": "Frontend: EntityBadge + CompanyCard + CompanyDetail header; api.js getPartners",
     "status": "completed"
   },
   {
-    "content": "Test: testing_agent_v3 for CSV upload + admin upload card; fix reported bugs (LOW: non-csv 400 validation FIXED)",
+    "content": "Frontend Search.js: entity-type filter (Company|LLP|Both)",
     "status": "completed"
+  },
+  {
+    "content": "Frontend CompanyDetail.js: identifier-based; Designated Partners tab + Total Contribution for LLP",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend Analytics.js: Company vs LLP breakdown card",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend: esbuild check + screenshot (Company + LLP detail) - PASSED",
+    "status": "completed"
+  },
+  {
+    "content": "Test: testing_agent_v3 for LLP Phase 2 (backend + frontend); fix bugs",
+    "status": "in_progress"
   }
 ]

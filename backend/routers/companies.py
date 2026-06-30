@@ -19,6 +19,7 @@ async def list_companies(
     sector: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     company_class: Optional[str] = Query(None),
+    entity_type: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     min_capital: Optional[float] = Query(None),
@@ -39,6 +40,7 @@ async def list_companies(
     params = {"city": city.split(",") if city else None,
               "sector": sector.split(",") if sector else None,
               "status": status, "company_class": company_class,
+              "entity_type": entity_type,
               "date_from": date_from, "date_to": date_to,
               "min_capital": min_capital, "max_capital": max_capital,
               "search": search}
@@ -46,19 +48,32 @@ async def list_companies(
                                    sort_by=sort_by, order=order)
 
 
+async def _find_entity(identifier: str) -> Optional[dict]:
+    """Resolve an entity by its generic identifier (CIN or LLPIN)."""
+    return await db.companies.find_one(
+        {"$or": [{"identifier": identifier}, {"cin": identifier}]}, {"_id": 0})
+
+
 @router.get("/{cin}", response_model=CompanyDetail)
 async def get_company(cin: str):
-    company = await db.companies.find_one({"cin": cin}, {"_id": 0})
+    company = await _find_entity(cin)
     if not company:
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Entity not found")
     await attach_director_counts(db, [company])
     return company
 
 
 @router.get("/{cin}/directors")
 async def get_directors(cin: str):
-    directors = await db.directors.find({"cin": cin}, {"_id": 0}).to_list(100)
+    directors = await db.directors.find({"cin": cin}, {"_id": 0}).to_list(200)
     return {"cin": cin, "count": len(directors), "directors": directors}
+
+
+@router.get("/{cin}/partners")
+async def get_partners(cin: str):
+    """LLP designated partners (the path param is the LLPIN / identifier)."""
+    partners = await db.partners.find({"llpin": cin}, {"_id": 0}).to_list(200)
+    return {"llpin": cin, "count": len(partners), "partners": partners}
 
 
 @router.get("/{cin}/charges")
@@ -88,10 +103,11 @@ async def get_contact(cin: str, user: dict = Depends(get_optional_user)):
 
 @router.get("/{cin}/similar", response_model=PaginatedCompanies)
 async def similar_companies(cin: str, limit: int = Query(6, ge=1, le=20)):
-    company = await db.companies.find_one({"cin": cin}, {"_id": 0})
+    company = await _find_entity(cin)
     if not company:
-        raise HTTPException(status_code=404, detail="Company not found")
-    query = {"cin": {"$ne": cin}}
+        raise HTTPException(status_code=404, detail="Entity not found")
+    ident = company.get("identifier") or company.get("cin")
+    query = {"identifier": {"$ne": ident}}
     ors = []
     if company.get("sector"):
         ors.append({"sector": company["sector"]})
@@ -101,16 +117,16 @@ async def similar_companies(cin: str, limit: int = Query(6, ge=1, le=20)):
         query["$and"] = [{"$or": ors}]
     # Prefer same sector AND city first
     primary = await db.companies.find(
-        {"cin": {"$ne": cin}, "sector": company.get("sector"), "city": company.get("city")},
+        {"identifier": {"$ne": ident}, "sector": company.get("sector"), "city": company.get("city")},
         {"_id": 0}).limit(limit).to_list(limit)
     results = primary
     if len(results) < limit:
         extra = await db.companies.find(query, {"_id": 0}).limit(limit * 2).to_list(limit * 2)
-        seen = {c["cin"] for c in results}
+        seen = {c.get("identifier") for c in results}
         for e in extra:
-            if e["cin"] not in seen:
+            if e.get("identifier") not in seen:
                 results.append(e)
-                seen.add(e["cin"])
+                seen.add(e.get("identifier"))
             if len(results) >= limit:
                 break
     results = results[:limit]

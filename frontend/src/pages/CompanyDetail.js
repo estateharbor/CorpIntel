@@ -12,10 +12,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/StatusBadge";
+import { EntityBadge } from "@/components/EntityBadge";
 import { CityTag, SectorChip } from "@/components/CityTag";
 import { CompanyCard } from "@/components/CompanyCard";
 import {
-  getCompany, getDirectors, getCharges, getFilings, getContact, getSimilar,
+  getCompany, getDirectors, getPartners, getCharges, getFilings, getContact, getSimilar,
 } from "@/lib/api";
 import { formatINR, formatDate } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
@@ -35,16 +36,26 @@ function Stat({ icon: Icon, label, value }) {
 }
 
 export default function CompanyDetail() {
-  const { cin } = useParams();
+  const { cin } = useParams();  // route param may be a CIN or an LLPIN
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const { data: company, isLoading } = useQuery({ queryKey: ["company", cin], queryFn: () => getCompany(cin) });
-  const { data: directors } = useQuery({ queryKey: ["directors", cin], queryFn: () => getDirectors(cin) });
-  const { data: charges } = useQuery({ queryKey: ["charges", cin], queryFn: () => getCharges(cin) });
-  const { data: filings } = useQuery({ queryKey: ["filings", cin], queryFn: () => getFilings(cin) });
-  const { data: contact } = useQuery({ queryKey: ["contact", cin, user?.plan], queryFn: () => getContact(cin) });
-  const { data: similar } = useQuery({ queryKey: ["similar", cin], queryFn: () => getSimilar(cin, 6) });
+  const isLLP = company?.entity_type === "LLP";
+
+  const { data: directors } = useQuery({ queryKey: ["directors", cin], queryFn: () => getDirectors(cin), enabled: !!company && !isLLP });
+  const { data: partners } = useQuery({ queryKey: ["partners", cin], queryFn: () => getPartners(cin), enabled: !!company && isLLP });
+  const { data: charges } = useQuery({ queryKey: ["charges", cin], queryFn: () => getCharges(cin), enabled: !!company });
+  const { data: filings } = useQuery({ queryKey: ["filings", cin], queryFn: () => getFilings(cin), enabled: !!company });
+  const { data: contact } = useQuery({ queryKey: ["contact", cin, user?.plan], queryFn: () => getContact(cin), enabled: !!company });
+  const { data: similar } = useQuery({ queryKey: ["similar", cin], queryFn: () => getSimilar(cin, 6), enabled: !!company });
+
+  // Entity-aware "people" view: Designated Partners for LLPs, Directors otherwise.
+  const people = isLLP ? (partners?.partners || []) : (directors?.directors || []);
+  const peopleLoaded = isLLP ? !!partners : !!directors;
+  const peopleCount = isLLP ? partners?.count : directors?.count;
+  const peopleLabel = isLLP ? "Designated Partners" : "Directors";
+  const peopleIdLabel = isLLP ? "DPIN" : "DIN";
 
   if (isLoading) {
     return (
@@ -55,7 +66,7 @@ export default function CompanyDetail() {
     );
   }
   if (!company) {
-    return <Card className="p-10 text-center">Company not found. <Link to="/search" className="text-accent underline">Back to search</Link></Card>;
+    return <Card className="p-10 text-center">Entity not found. <Link to="/search" className="text-accent underline">Back to search</Link></Card>;
   }
 
   return (
@@ -67,12 +78,13 @@ export default function CompanyDetail() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Building2 className="h-6 w-6" />
+              {isLLP ? <Users className="h-6 w-6" /> : <Building2 className="h-6 w-6" />}
             </div>
             <div>
               <h1 className="font-heading text-2xl font-bold leading-tight" data-testid="company-header-name">{company.name}</h1>
-              <div className="mt-1 font-mono text-xs text-muted-foreground">{company.cin}</div>
+              <div className="mt-1 font-mono text-xs text-muted-foreground" data-testid="company-header-identifier">{company.identifier || company.cin}</div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
+                <EntityBadge type={company.entity_type} />
                 <StatusBadge status={company.status} />
                 <CityTag city={company.city} area={company.area} />
                 <SectorChip sector={company.sector} />
@@ -81,8 +93,10 @@ export default function CompanyDetail() {
             </div>
           </div>
           <div className="text-right">
-            <div className="text-xs text-muted-foreground">Paid-up capital</div>
-            <div className="font-heading text-2xl font-bold tabular-nums">{formatINR(company.paid_up_capital)}</div>
+            <div className="text-xs text-muted-foreground">{isLLP ? "Total contribution" : "Paid-up capital"}</div>
+            <div className="font-heading text-2xl font-bold tabular-nums" data-testid="company-header-capital">
+              {formatINR(isLLP && company.total_contribution != null ? company.total_contribution : company.paid_up_capital)}
+            </div>
             <div className="text-xs text-muted-foreground mt-1">Data quality {company.data_quality_score}/100</div>
           </div>
         </div>
@@ -92,7 +106,7 @@ export default function CompanyDetail() {
       <Tabs defaultValue="overview" data-testid="company-tabs">
         <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
-          <TabsTrigger value="directors" data-testid="tab-directors">Directors {directors ? `(${directors.count})` : ""}</TabsTrigger>
+          <TabsTrigger value="directors" data-testid="tab-directors">{peopleLabel} {peopleLoaded ? `(${peopleCount})` : ""}</TabsTrigger>
           <TabsTrigger value="charges" data-testid="tab-charges">Charges {charges ? `(${charges.charges.length})` : ""}</TabsTrigger>
           <TabsTrigger value="filings" data-testid="tab-filings">Filings {filings ? `(${filings.filings.length})` : ""}</TabsTrigger>
           <TabsTrigger value="contact" data-testid="tab-contact">Contact</TabsTrigger>
@@ -101,13 +115,19 @@ export default function CompanyDetail() {
         <TabsContent value="overview" className="mt-4">
           <Card className="p-6">
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              <Stat icon={Hash} label="CIN" value={company.cin} />
+              <Stat icon={Hash} label={isLLP ? "LLPIN" : "CIN"} value={company.identifier || company.cin} />
               <Stat icon={Landmark} label="ROC" value={company.roc} />
-              <Stat icon={Briefcase} label="Company class" value={company.company_class} />
-              <Stat icon={Building2} label="Category" value={company.category} />
-              <Stat icon={Calendar} label="Date of incorporation" value={formatDate(company.date_of_incorporation)} />
-              <Stat icon={IndianRupee} label="Authorized capital" value={formatINR(company.authorized_capital)} />
-              <Stat icon={IndianRupee} label="Paid-up capital" value={formatINR(company.paid_up_capital)} />
+              <Stat icon={Briefcase} label={isLLP ? "Entity type" : "Company class"} value={isLLP ? "LLP" : company.company_class} />
+              {!isLLP && <Stat icon={Building2} label="Category" value={company.category} />}
+              <Stat icon={Calendar} label={isLLP ? "Date of registration" : "Date of incorporation"} value={formatDate(company.date_of_incorporation)} />
+              {isLLP ? (
+                <Stat icon={IndianRupee} label="Total contribution" value={formatINR(company.total_contribution)} />
+              ) : (
+                <>
+                  <Stat icon={IndianRupee} label="Authorized capital" value={formatINR(company.authorized_capital)} />
+                  <Stat icon={IndianRupee} label="Paid-up capital" value={formatINR(company.paid_up_capital)} />
+                </>
+              )}
               <Stat icon={MapPin} label="Registered address" value={company.address} />
               <Stat icon={Briefcase} label="Principal activity" value={company.principal_activity} />
             </div>
@@ -120,16 +140,16 @@ export default function CompanyDetail() {
         </TabsContent>
 
         <TabsContent value="directors" className="mt-4">
-          <Card className="p-2 sm:p-4">
-            {!directors ? <Skeleton className="h-40 w-full" /> : directors.directors.length === 0 ? (
-              <EmptyRow icon={Users} text="No director records available." />
+          <Card className="p-2 sm:p-4" data-testid="people-table">
+            {!peopleLoaded ? <Skeleton className="h-40 w-full" /> : people.length === 0 ? (
+              <EmptyRow icon={Users} text={isLLP ? "No designated partner records available." : "No director records available."} />
             ) : (
               <Table>
-                <TableHeader><TableRow><TableHead>DIN</TableHead><TableHead>Name</TableHead><TableHead>Designation</TableHead><TableHead>Appointed</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>{peopleIdLabel}</TableHead><TableHead>Name</TableHead><TableHead>Designation</TableHead><TableHead>Appointed</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {directors.directors.map((d) => (
-                    <TableRow key={d.din}>
-                      <TableCell className="font-mono text-xs">{d.din}</TableCell>
+                  {people.map((d) => (
+                    <TableRow key={d.din || d.dpin}>
+                      <TableCell className="font-mono text-xs">{d.din || d.dpin}</TableCell>
                       <TableCell className="font-medium">{d.name}</TableCell>
                       <TableCell>{d.designation}</TableCell>
                       <TableCell>{formatDate(d.date_of_appointment)}</TableCell>
@@ -213,7 +233,7 @@ export default function CompanyDetail() {
       <div data-testid="company-similar-companies">
         <h2 className="font-heading text-lg font-semibold mb-3">Similar companies</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {(similar?.results || []).map((c) => <CompanyCard key={c.cin} company={c} />)}
+          {(similar?.results || []).map((c) => <CompanyCard key={c.identifier || c.cin} company={c} />)}
         </div>
       </div>
     </div>

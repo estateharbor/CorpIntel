@@ -144,6 +144,7 @@ class AdvancedSearchRequest(BaseModel):
     sector: Optional[List[str]] = None
     status: Optional[str] = None
     company_class: Optional[str] = None
+    entity_type: Optional[str] = None
     date_from: Optional[str] = None
     date_to: Optional[str] = None
     min_capital: Optional[float] = None
@@ -182,6 +183,7 @@ class ExportRequest(BaseModel):
     sector: Optional[List[str]] = None
     status: Optional[str] = None
     company_class: Optional[str] = None
+    entity_type: Optional[str] = None
     date_from: Optional[str] = None
     date_to: Optional[str] = None
     min_capital: Optional[float] = None

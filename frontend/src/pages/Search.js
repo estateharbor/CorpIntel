@@ -14,7 +14,7 @@ import { getCompanies, saveSearch } from "@/lib/api";
 import { SORT_OPTIONS, formatNumber } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 
-const DEFAULT_FILTERS = { city: "All", status: "All", sector: "All", company_class: "All", date_from: "", date_to: "", min_capital: 0, max_capital: 100000000 };
+const DEFAULT_FILTERS = { city: "All", status: "All", sector: "All", company_class: "All", entity_type: "All", date_from: "", date_to: "", min_capital: 0, max_capital: 100000000 };
 const LIMIT = 24;
 
 export default function SearchPage() {
@@ -38,6 +38,7 @@ export default function SearchPage() {
     if (filters.status !== "All") p.status = filters.status;
     if (filters.sector !== "All") p.sector = filters.sector;
     if (filters.company_class !== "All") p.company_class = filters.company_class;
+    if (filters.entity_type !== "All") p.entity_type = filters.entity_type;
     if (filters.date_from) p.date_from = filters.date_from;
     if (filters.date_to) p.date_to = filters.date_to;
     if (filters.min_capital > 0) p.min_capital = filters.min_capital;
@@ -106,6 +107,14 @@ export default function SearchPage() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <Select value={filters.entity_type} onValueChange={(v) => patch({ entity_type: v })}>
+              <SelectTrigger className="h-9 w-[130px]" data-testid="search-entity-type-select"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All types</SelectItem>
+                <SelectItem value="Company">Companies</SelectItem>
+                <SelectItem value="LLP">LLPs</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={sortBy} onValueChange={(v) => { setSortBy(v); setPage(1); }}>
               <SelectTrigger className="h-9 w-[180px]" data-testid="search-sort-select"><SelectValue /></SelectTrigger>
               <SelectContent>{SORT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
@@ -135,7 +144,7 @@ export default function SearchPage() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {data.results.map((c) => <CompanyCard key={c.cin} company={c} />)}
+            {data.results.map((c) => <CompanyCard key={c.identifier || c.cin} company={c} />)}
           </div>
         )}
 

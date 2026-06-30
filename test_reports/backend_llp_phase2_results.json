@@ -1,0 +1,84 @@
+{
+  "timestamp": "2026-06-30T15:13:06.106570",
+  "total": 19,
+  "passed": 19,
+  "failed": 0,
+  "results": [
+    {
+      "test": "Health endpoint",
+      "status": "PASSED"
+    },
+    {
+      "test": "Admin stats endpoint",
+      "status": "PASSED"
+    },
+    {
+      "test": "Enrichment progress endpoint",
+      "status": "PASSED"
+    },
+    {
+      "test": "Demo login",
+      "status": "PASSED"
+    },
+    {
+      "test": "Company detail by CIN",
+      "status": "PASSED"
+    },
+    {
+      "test": "LLP detail by LLPIN",
+      "status": "PASSED"
+    },
+    {
+      "test": "LLP partners endpoint",
+      "status": "PASSED"
+    },
+    {
+      "test": "Company directors endpoint (regression)",
+      "status": "PASSED"
+    },
+    {
+      "test": "Filter companies by entity_type=LLP",
+      "status": "PASSED"
+    },
+    {
+      "test": "Filter companies by entity_type=Company",
+      "status": "PASSED"
+    },
+    {
+      "test": "No entity_type filter returns both",
+      "status": "PASSED"
+    },
+    {
+      "test": "Analytics summary entity breakdown",
+      "status": "PASSED"
+    },
+    {
+      "test": "Analytics summary with city filter",
+      "status": "PASSED"
+    },
+    {
+      "test": "Search includes entity_type",
+      "status": "PASSED"
+    },
+    {
+      "test": "Similar companies for Company",
+      "status": "PASSED"
+    },
+    {
+      "test": "Similar entities for LLP",
+      "status": "PASSED"
+    },
+    {
+      "test": "Company charges endpoint",
+      "status": "PASSED"
+    },
+    {
+      "test": "Company filings endpoint",
+      "status": "PASSED"
+    },
+    {
+      "test": "Company contact endpoint",
+      "status": "PASSED"
+    }
+  ]
+}
