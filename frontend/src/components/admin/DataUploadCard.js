@@ -198,7 +198,7 @@ export function DataUploadCard({ onUploaded }) {
         />
         <UploadCloud className="h-8 w-8 text-muted-foreground mb-2" />
         <p className="text-sm font-medium">Drag &amp; drop your CSV here, or click to browse</p>
-        <p className="text-xs text-muted-foreground mt-1">Supports both Companies (CIN) and LLPs (LLPIN) · max 25 MB</p>
+        <p className="text-xs text-muted-foreground mt-1">Supports both Companies (CIN) and LLPs (LLPIN) · max 150 MB</p>
       </label>
 
       {/* Selected file + actions */}

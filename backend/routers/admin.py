@@ -66,8 +66,8 @@ async def upload_csv(file: UploadFile = File(...)):
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
-    if len(content) > 25 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large (max 25 MB)")
+    if len(content) > 150 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 150 MB)")
     from services.csv_upload import process_upload
     return await process_upload(db, content)
 
