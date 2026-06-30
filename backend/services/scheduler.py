@@ -19,7 +19,6 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from db import db
 from services.classifier import classify_company
-from services.enrichment import enrich_company
 
 logger = logging.getLogger("corpintel.scheduler")
 IST = pytz.timezone("Asia/Kolkata")
@@ -44,10 +43,18 @@ async def weekly_ingest():
 
 
 async def enrichment_worker():
-    """JOB 2: classify unclassified + attempt enrichment for 50 CINs."""
-    logger.info("[JOB enrichment_worker] starting")
+    """JOB 2: classify unclassified companies (AI/Claude or fallback).
+
+    SAFETY: Automatic MCA enrichment is intentionally DISABLED here. MCA portal
+    scraping is CAPTCHA/IP-block protected and must ONLY be performed via the
+    manual, human-in-the-loop session runner (services/run_enrichment_session.py)
+    after a fresh MCA_SESSION_COOKIE is injected. Looping enrichment in the
+    background risks IP bans AND would wrongly mark blocked companies as
+    enriched, corrupting the manual queue. This worker now only classifies.
+    """
+    logger.info("[JOB enrichment_worker] starting (classification only; auto MCA enrichment disabled)")
     processed = 0
-    # 1) classify unclassified (this works via Claude/fallback)
+    # Classify unclassified companies (this works via Claude/fallback).
     cursor = db.companies.find({"classified": {"$ne": True}}, {"_id": 0}).limit(50)
     async for c in cursor:
         result = await classify_company(db, c.get("principal_activity", ""), c.get("name", ""))
@@ -60,16 +67,11 @@ async def enrichment_worker():
             "classified": True,
         }})
         processed += 1
-    # 2) attempt enrichment for a few unenriched (likely blocked - logged)
-    enriched_attempts = 0
-    cursor2 = db.companies.find({"enriched": {"$ne": True}}, {"_id": 0}).limit(5)
-    async for c in cursor2:
-        await enrich_company(db, c["cin"])
-        enriched_attempts += 1
     await db.job_runs.insert_one({
         "job": "enrichment_worker", "ran_at": datetime.now(timezone.utc),
-        "status": "ok", "classified": processed, "enrich_attempts": enriched_attempts})
-    logger.info("[JOB enrichment_worker] classified=%s enrich_attempts=%s", processed, enriched_attempts)
+        "status": "ok", "classified": processed,
+        "enrich_attempts": 0, "note": "auto MCA enrichment disabled (manual loop only)"})
+    logger.info("[JOB enrichment_worker] classified=%s (enrichment is manual-only)", processed)
 
 
 async def alert_checker():

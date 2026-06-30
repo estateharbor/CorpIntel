@@ -560,6 +560,45 @@ class CorpIntelAPITester:
         )
         return success
 
+    def test_admin_enrichment_progress(self):
+        """Test GET /api/v1/admin/enrichment-progress (NEW MCA enrichment dashboard endpoint)."""
+        success, response = self.run_test(
+            "Admin Enrichment Progress",
+            "GET",
+            "/api/v1/admin/enrichment-progress",
+            200,
+            check_response=lambda r: (
+                'progress' in r and
+                'governance' in r and
+                'commands' in r and
+                'cohort_description' in r and
+                r['progress'].get('total') is not None and
+                r['progress'].get('enriched') is not None and
+                r['progress'].get('remaining') is not None and
+                r['progress'].get('not_yet_attempted') is not None and
+                r['progress'].get('attempted_failed') is not None and
+                r['progress'].get('permanently_failed') is not None and
+                r['progress'].get('progress_pct') is not None and
+                r['governance'].get('sessions_today') is not None and
+                r['governance'].get('max_sessions_per_day') == 3 and
+                r['governance'].get('min_gap_hours') == 3 and
+                r['governance'].get('batch_size') == 400 and
+                r['governance'].get('time_budget_minutes') == 110 and
+                r['governance'].get('max_consecutive_failures') == 5 and
+                r['governance'].get('can_start_now') is not None and
+                r['governance'].get('auto_enrichment_disabled') == True and
+                'run_session' in r['commands'] and
+                'retry_failed' in r['commands'] and
+                'set_cookie' in r['commands']
+            )
+        )
+        if success:
+            self.log(f"   Progress: {response['progress']['enriched']}/{response['progress']['total']} enriched ({response['progress']['progress_pct']}%)")
+            self.log(f"   Sessions today: {response['governance']['sessions_today']}/{response['governance']['max_sessions_per_day']}")
+            self.log(f"   Can start now: {response['governance']['can_start_now']}")
+            self.log(f"   Auto enrichment disabled: {response['governance']['auto_enrichment_disabled']}")
+        return success
+
     # ===== PAYMENTS =====
     def test_payments_plans(self):
         """Test GET /api/v1/payments/plans."""
@@ -654,6 +693,7 @@ class CorpIntelAPITester:
         self.log("\n--- ADMIN ---")
         self.test_admin_stats()
         self.test_admin_ingest_seed()
+        self.test_admin_enrichment_progress()
         
         # Payments
         self.log("\n--- PAYMENTS ---")

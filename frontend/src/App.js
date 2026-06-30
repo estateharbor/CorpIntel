@@ -19,6 +19,7 @@ import Alerts from "@/pages/Alerts";
 import ExportPage from "@/pages/Export";
 import Pricing from "@/pages/Pricing";
 import Settings from "@/pages/Settings";
+import AdminEnrichment from "@/pages/AdminEnrichment";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1, staleTime: 30000 } },
@@ -42,6 +43,7 @@ function AppRouter() {
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
         <Route path="/export" element={<ProtectedRoute><ExportPage /></ProtectedRoute>} />
+        <Route path="/admin/enrichment" element={<ProtectedRoute><AdminEnrichment /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

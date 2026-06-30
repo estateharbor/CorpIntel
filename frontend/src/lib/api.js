@@ -52,6 +52,8 @@ export const deleteAlert = (id) => api.delete(`/alerts/${id}`).then((r) => r.dat
 export const alertLog = () => api.get("/alerts/log").then((r) => r.data);
 
 export const getAdminStats = () => api.get("/admin/stats").then((r) => r.data);
+export const getEnrichmentProgress = () =>
+  api.get("/admin/enrichment-progress").then((r) => r.data);
 export const triggerSeed = () => api.post("/admin/ingest/seed").then((r) => r.data);
 
 export const getPlans = () => api.get("/payments/plans").then((r) => r.data);
