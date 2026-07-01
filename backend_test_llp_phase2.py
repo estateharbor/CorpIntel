@@ -1,9 +1,10 @@
 """Backend API tests for LLP Phase 2 - Entity-type-aware search, LLP detail pages, analytics."""
 import json
 import sys
+import os
 import requests
 
-BASE_URL = "https://corp-intel-india.preview.emergentagent.com/api"
+BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8001/api")
 V1_URL = f"{BASE_URL}/v1"
 
 class Colors:

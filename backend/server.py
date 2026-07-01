@@ -13,6 +13,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 from auth_utils import hash_password, new_api_key, new_user_id  # noqa: E402
+from config_validation import validate_runtime_config  # noqa: E402
 from db import client, db  # noqa: E402
 from routers import (admin, alerts, analytics, auth, companies, export,  # noqa: E402
                      payments, search)
@@ -86,7 +87,7 @@ app.include_router(alerts.router, prefix=API_V1)
 app.include_router(admin.router, prefix=API_V1)
 app.include_router(payments.router, prefix=API_V1)
 
-# CORS (credentials enabled for cookie-based Google auth; regex reflects origin)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=".*",
@@ -94,7 +95,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 async def _ensure_demo_user():
     existing = await db.users.find_one({"email": "demo@corpintel.in"})
@@ -113,6 +113,7 @@ async def _ensure_demo_user():
 
 @app.on_event("startup")
 async def on_startup():
+    validate_runtime_config()
     await ensure_indexes(db)
     cfg = await db.system_config.find_one({"_id": "ingest"}) or {}
     seeding_disabled = bool(cfg.get("sample_seed_disabled"))

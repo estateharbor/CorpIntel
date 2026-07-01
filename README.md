@@ -1,12 +1,12 @@
-# CorpIntel India 🇮🇳
+# CorpIntel India
 
 **India's most complete company intelligence platform** for the Mumbai Metropolitan Region (Mumbai · Navi Mumbai · Thane) — discover, analyze, track and export registered-company intelligence. Think *Zaubacorp meets Crunchbase meets a Bloomberg terminal* for Indian SME intelligence.
 
-> Built on **React + FastAPI + MongoDB** (shadcn/ui, Tailwind, Recharts, TanStack Query). AI sector classification via **Anthropic Claude**. Subscriptions via **Stripe**. Auth via **Email/Password (JWT) + Emergent Google Auth**.
+> Built on **React + FastAPI + MongoDB** (shadcn/ui, Tailwind, Recharts, TanStack Query). AI sector classification via **Anthropic Claude**. Subscriptions via **Stripe**. Auth via **Email/Password (JWT)**.
 
 ---
 
-## ✨ Features
+## Features
 
 - **Data ingestion engine** — real `data.gov.in` Company Master Data (activates with `DATA_GOV_API_KEY`) + honest MCA / GST / JustDial / IndiaMart scraper modules (rate-limit, retry, IP-block detection). A clearly-labeled **SAMPLE MMR dataset** (600 companies) powers the app out-of-the-box.
 - **City tagger** — classifies every address into Mumbai / Navi Mumbai / Thane / Other-Maharashtra (exact MMR locality lists).
@@ -22,7 +22,7 @@
 
 ---
 
-## 🗂 Project structure
+## Project structure
 
 ```
 backend/
@@ -41,10 +41,7 @@ docker-compose.yml  .env.example  deploy/nginx.conf
 
 ---
 
-## 🚀 Run
-
-### On Emergent (current)
-Services run under **supervisor** (`frontend:3000`, `backend:8001`, managed MongoDB). The backend auto-seeds the sample dataset and a demo user on startup. Inject secrets via the **Secrets panel** (see below).
+## Run
 
 ### Local / self-hosted (Docker)
 ```bash
@@ -66,7 +63,7 @@ cd backend && python -m scripts.test_core   # exit 0 = all core checks pass
 
 ---
 
-## 🔐 Environment variables
+## Environment variables
 
 | Variable | Purpose |
 |---|---|
@@ -82,17 +79,16 @@ All variables are read via `os.getenv` (backend) / `process.env` (frontend). **N
 
 ---
 
-## 🧪 Auth & testing
+## Auth & testing
 
 - **Demo login (test bypass):** `POST /api/v1/auth/demo-login` → Pro JWT, or the *“Try the Demo”* button on `/login`. Disable with `ALLOW_TEST_BYPASS=false` before production.
 - **Email/Password:** `/api/v1/auth/register`, `/api/v1/auth/login`.
-- **Google:** Emergent managed Google Auth (no Google project needed).
 
-See `/app/auth_testing.md` for detailed test instructions.
+See `auth_testing.md` for detailed test instructions.
 
 ---
 
-## 📊 Data sources & honesty
+## Data sources & honesty
 
 - **data.gov.in** Company Master Data is the legitimate, open-government seed source (resource `4dbe5667-7b6b-41d7-82af-211562424d9a`). Requires a free registered API key.
 - **MCA / GST / JustDial / IndiaMart** live scraping is CAPTCHA & IP-block protected (MCA returns HTTP 403). The scraper modules are fully implemented with rate-limiting, retries, exponential backoff and IP-block detection, but report `blocked` status where network access is restricted.
@@ -100,7 +96,7 @@ See `/app/auth_testing.md` for detailed test instructions.
 
 ---
 
-## 🛠 API (base `/api/v1`)
+## API (base `/api/v1`)
 
 `auth/*` · `companies` (+`/{cin}`, `/directors`, `/charges`, `/filings`, `/contact`, `/similar`) · `analytics/{summary,trends,sectors,capital,heatmap}` · `search` (+`/advanced`, `/save`, `/saved`) · `export/{csv,excel,pdf}` · `alerts` · `admin/{stats,ingest/seed,ingest/incremental,enrich/{cin}}` · `payments/{plans,checkout,status}` · webhook at `/api/webhook/stripe`.
 

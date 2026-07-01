@@ -1,14 +1,15 @@
-"""Stripe subscription service (TEST mode) via emergentintegrations.
+"""Stripe subscription service using the official Stripe SDK.
 
-Plans are defined server-side (amounts never trusted from frontend). Uses the
-user-injected STRIPE_SECRET_KEY when present, else falls back to the Emergent
-test key (STRIPE_API_KEY=sk_test_emergent) so checkout is testable immediately.
+Plans are defined server-side; amounts are never trusted from the frontend.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Dict, Optional
+
+import stripe
 
 logger = logging.getLogger("corpintel.stripe")
 
@@ -20,16 +21,22 @@ PLANS: Dict[str, Dict] = {
 
 
 def _api_key() -> Optional[str]:
-    return os.getenv("STRIPE_SECRET_KEY") or os.getenv("STRIPE_API_KEY")
+    return os.getenv("STRIPE_SECRET_KEY")
 
 
 def stripe_configured() -> bool:
     return bool(_api_key())
 
 
-def _checkout(webhook_url: str):
-    from emergentintegrations.payments.stripe.checkout import StripeCheckout
-    return StripeCheckout(api_key=_api_key(), webhook_url=webhook_url)
+def _webhook_secret() -> Optional[str]:
+    return os.getenv("STRIPE_WEBHOOK_SECRET")
+
+
+def _configure_stripe():
+    api_key = _api_key()
+    if not api_key:
+        raise RuntimeError("Stripe not configured (set STRIPE_SECRET_KEY)")
+    stripe.api_key = api_key
 
 
 async def create_subscription_checkout(*, plan_id: str, origin_url: str,
@@ -39,40 +46,60 @@ async def create_subscription_checkout(*, plan_id: str, origin_url: str,
     if not stripe_configured():
         raise RuntimeError("Stripe not configured (set STRIPE_SECRET_KEY)")
     plan = PLANS[plan_id]
-    from emergentintegrations.payments.stripe.checkout import CheckoutSessionRequest
     success_url = f"{origin_url}/settings?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin_url}/pricing"
-    checkout = _checkout(webhook_url)
-    req = CheckoutSessionRequest(
-        amount=plan["amount"], currency=plan["currency"],
-        success_url=success_url, cancel_url=cancel_url,
-        metadata={"user_id": user["user_id"], "email": user["email"],
-                  "plan_id": plan_id, "plan": plan["plan"], "source": "corpintel_subscription"},
+    _configure_stripe()
+    metadata = {
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "plan_id": plan_id,
+        "plan": plan["plan"],
+        "source": "corpintel_subscription",
+    }
+    session = await asyncio.to_thread(
+        stripe.checkout.Session.create,
+        mode="payment",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        customer_email=user["email"],
+        client_reference_id=user["user_id"],
+        metadata=metadata,
+        payment_intent_data={"metadata": metadata},
+        line_items=[{
+            "quantity": 1,
+            "price_data": {
+                "currency": plan["currency"],
+                "unit_amount": int(plan["amount"] * 100),
+                "product_data": {"name": f"CorpIntel India {plan['name']}"},
+            },
+        }],
     )
-    session = await checkout.create_checkout_session(req)
-    return {"url": session.url, "session_id": session.session_id,
+    return {"url": session.url, "session_id": session.id,
             "amount": plan["amount"], "currency": plan["currency"], "plan": plan["plan"]}
 
 
 async def get_checkout_status(*, session_id: str, webhook_url: str) -> Dict:
-    checkout = _checkout(webhook_url)
-    status = await checkout.get_checkout_status(session_id)
+    _configure_stripe()
+    session = await asyncio.to_thread(stripe.checkout.Session.retrieve, session_id)
     return {
-        "status": status.status,
-        "payment_status": status.payment_status,
-        "amount_total": status.amount_total,
-        "currency": status.currency,
-        "metadata": status.metadata,
+        "status": session.status,
+        "payment_status": session.payment_status,
+        "amount_total": session.amount_total,
+        "currency": session.currency,
+        "metadata": dict(session.metadata or {}),
     }
 
 
 async def handle_webhook_event(*, body: bytes, signature: str, webhook_url: str) -> Dict:
-    checkout = _checkout(webhook_url)
-    resp = await checkout.handle_webhook(body, signature)
+    webhook_secret = _webhook_secret()
+    if not webhook_secret:
+        raise RuntimeError("Stripe webhook not configured (set STRIPE_WEBHOOK_SECRET)")
+    event = stripe.Webhook.construct_event(body, signature, webhook_secret)
+    session = event["data"]["object"]
     return {
-        "event_type": resp.event_type,
-        "event_id": resp.event_id,
-        "session_id": resp.session_id,
-        "payment_status": resp.payment_status,
-        "metadata": resp.metadata,
+        "event_type": event["type"],
+        "event_id": event["id"],
+        "session_id": session.get("id"),
+        "payment_status": session.get("payment_status"),
+        "metadata": dict(session.get("metadata") or {}),
     }

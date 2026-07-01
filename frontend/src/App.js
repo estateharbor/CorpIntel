@@ -1,13 +1,12 @@
 import React from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/context/AuthContext";
 import AppShell from "@/components/layout/AppShell";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import AuthCallback from "@/components/AuthCallback";
 
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
@@ -26,11 +25,6 @@ const queryClient = new QueryClient({
 });
 
 function AppRouter() {
-  const location = useLocation();
-  // Handle Emergent Google OAuth callback BEFORE any protected routing
-  if (location.hash && location.hash.includes("session_id=")) {
-    return <AuthCallback />;
-  }
   return (
     <Routes>
       <Route path="/" element={<Landing />} />

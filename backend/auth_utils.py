@@ -1,12 +1,4 @@
-"""Auth utilities: JWT, password hashing, session lookup, plan limits.
-
-Supports BOTH:
-  - Email/Password JWT auth
-  - Emergent managed Google Auth (session_token cookie / bearer)
-
-REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS,
-THIS BREAKS THE AUTH (applies to the Emergent OAuth redirect in the frontend).
-"""
+"""Auth utilities: JWT, password hashing, session lookup, plan limits."""
 from __future__ import annotations
 
 import os
@@ -20,7 +12,7 @@ from passlib.context import CryptContext
 
 from db import db
 
-JWT_SECRET = os.getenv("JWT_SECRET", "corpintel-dev-secret")
+JWT_SECRET = os.getenv("JWT_SECRET", "")
 JWT_ALGO = "HS256"
 JWT_EXPIRE_DAYS = 7
 
@@ -61,7 +53,7 @@ def new_api_key() -> str:
 
 
 async def _user_from_token(token: str) -> Optional[dict]:
-    """Resolve a user from a JWT or an Emergent session_token."""
+    """Resolve a user from a JWT."""
     if not token:
         return None
     # 1) Try JWT
@@ -74,17 +66,6 @@ async def _user_from_token(token: str) -> Optional[dict]:
                 return user
     except JWTError:
         pass
-    # 2) Try Emergent session token
-    session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
-    if session:
-        expires_at = session.get("expires_at")
-        if isinstance(expires_at, str):
-            expires_at = datetime.fromisoformat(expires_at)
-        if expires_at and expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if expires_at and expires_at < datetime.now(timezone.utc):
-            return None
-        return await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
     return None
 
 

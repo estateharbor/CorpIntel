@@ -1,10 +1,7 @@
-# CorpIntel India - single-command stack for portability.
+# CorpIntel India - single-command stack for local and self-hosted deployment.
 #
-# NOTE: On the Emergent platform the app runs via supervisor (frontend:3000,
-# backend:8001, managed MongoDB). This compose file is provided for local /
-# self-hosted deployment per the spec (frontend, backend, mongodb, redis,
-# scheduler, nginx). The scheduler runs inside the backend image already, so
-# the dedicated `scheduler` service is an optional separate worker.
+# The scheduler runs inside the backend image already, so the dedicated
+# `scheduler` service is an optional separate worker.
 #
 # Usage:  cp .env.example .env  &&  docker compose up --build
 

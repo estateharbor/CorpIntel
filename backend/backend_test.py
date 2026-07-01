@@ -1,9 +1,10 @@
 """Comprehensive backend API testing for CorpIntel India."""
 import requests
 import sys
+import os
 from datetime import datetime
 
-BASE_URL = "https://corp-intel-india.preview.emergentagent.com"
+BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8001")
 
 class CorpIntelAPITester:
     def __init__(self):
@@ -624,7 +625,7 @@ class CorpIntelAPITester:
             200,
             data={
                 "plan_id": "pro",
-                "origin_url": "https://corp-intel-india.preview.emergentagent.com"
+                "origin_url": os.getenv("FRONTEND_ORIGIN_URL", "http://localhost:3000")
             },
             check_response=lambda r: 'url' in r and 'session_id' in r
         )

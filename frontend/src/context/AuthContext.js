@@ -20,12 +20,6 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    // CRITICAL: If returning from OAuth callback, skip the /me check.
-    // AuthCallback will exchange the session_id and establish the session first.
-    if (typeof window !== "undefined" && window.location.hash?.includes("session_id=")) {
-      setLoading(false);
-      return;
-    }
     checkAuth();
   }, [checkAuth]);
 
@@ -50,12 +44,6 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
-  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-  const googleLogin = () => {
-    const redirectUrl = window.location.origin + "/dashboard";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-  };
-
   const logout = async () => {
     try {
       await api.post("/auth/logout");
@@ -66,6 +54,6 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  const value = { user, loading, login, register, demoLogin, googleLogin, logout, refresh: checkAuth, setUser };
+  const value = { user, loading, login, register, demoLogin, logout, refresh: checkAuth, setUser };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

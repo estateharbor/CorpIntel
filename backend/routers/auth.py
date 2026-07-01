@@ -1,13 +1,11 @@
-"""Auth router: Email/Password JWT + Emergent Google Auth + demo bypass."""
+"""Auth router: Email/Password JWT + demo bypass."""
 from __future__ import annotations
 
 import logging
 import os
-import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-import httpx
-from fastapi import APIRouter, Body, Cookie, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 
 from auth_utils import (create_access_token, get_current_user, hash_password,
                         new_api_key, new_user_id, verify_password)
@@ -18,7 +16,6 @@ from models import (LoginRequest, MagicLinkRequest, RegisterRequest,
 logger = logging.getLogger("corpintel.auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 ALLOW_TEST_BYPASS = os.getenv("ALLOW_TEST_BYPASS", "false").lower() == "true"
 
 
@@ -96,49 +93,6 @@ async def demo_login():
         user = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
     token = create_access_token(user["user_id"])
     return {"access_token": token, "token_type": "bearer", "user": _public(user)}
-
-
-@router.post("/google/session")
-async def google_session(response: Response, x_session_id: str = Header(None),
-                         session_id: str = Body(None, embed=True)):
-    """Exchange an Emergent Google session_id for an app session.
-
-    Frontend sends the session_id (from URL fragment) here; backend calls the
-    Emergent session-data endpoint (never the frontend).
-    """
-    sid = x_session_id or session_id
-    if not sid:
-        raise HTTPException(status_code=400, detail="Missing session_id")
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(EMERGENT_SESSION_URL, headers={"X-Session-ID": sid})
-        if r.status_code != 200:
-            raise HTTPException(status_code=401, detail="Invalid session")
-        data = r.json()
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Auth provider error: {e}")
-
-    email = data.get("email")
-    if not email:
-        raise HTTPException(status_code=401, detail="No email from provider")
-    user = await db.users.find_one({"email": email.lower()}, {"_id": 0})
-    if not user:
-        user = await _new_user(email, data.get("name", email.split("@")[0]),
-                               provider="google", picture=data.get("picture"))
-    session_token = data.get("session_token") or f"sess_{uuid.uuid4().hex}"
-    expires = datetime.now(timezone.utc) + timedelta(days=7)
-    await db.user_sessions.update_one(
-        {"session_token": session_token},
-        {"$set": {"session_token": session_token, "user_id": user["user_id"],
-                  "expires_at": expires, "created_at": datetime.now(timezone.utc)}},
-        upsert=True,
-    )
-    response.set_cookie(key="session_token", value=session_token, httponly=True,
-                        secure=True, samesite="none", path="/",
-                        max_age=7 * 24 * 3600)
-    return {"user": _public(user), "session_token": session_token}
 
 
 @router.get("/me", response_model=UserPublic)
