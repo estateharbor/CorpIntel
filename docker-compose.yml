@@ -20,9 +20,7 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
+    env_file: .env
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=${DB_NAME:-corpintel}
@@ -38,9 +36,7 @@ services:
   celery-worker:
     build: ./backend
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
+    env_file: .env
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=${DB_NAME:-corpintel}
@@ -55,9 +51,7 @@ services:
   celery-enrichment-worker:
     build: ./backend
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
+    env_file: .env
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=${DB_NAME:-corpintel}
@@ -72,9 +66,7 @@ services:
   celery-beat:
     build: ./backend
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
+    env_file: .env
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=${DB_NAME:-corpintel}
@@ -89,9 +81,7 @@ services:
   flower:
     build: ./backend
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
+    env_file: .env
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=${DB_NAME:-corpintel}
