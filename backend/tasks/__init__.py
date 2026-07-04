@@ -1,1 +1,1 @@
-"""Celery task package for CorpIntel background jobs."""
+"""Celery task modules for CorpIntel."""

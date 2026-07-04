@@ -2,7 +2,7 @@
 
 **India's most complete company intelligence platform** for the Mumbai Metropolitan Region (Mumbai · Navi Mumbai · Thane) — discover, analyze, track and export registered-company intelligence. Think *Zaubacorp meets Crunchbase meets a Bloomberg terminal* for Indian SME intelligence.
 
-> Built on **React + FastAPI + MongoDB** (shadcn/ui, Tailwind, Recharts, TanStack Query). AI sector classification via **Anthropic Claude**. Subscriptions via **Razorpay**. Auth via **Email/Password (JWT)**.
+> Built on **Next.js + FastAPI + MongoDB** (shadcn/ui, Tailwind, Recharts, TanStack Query). AI sector classification via **Anthropic Claude**. Subscriptions via **Razorpay**. Auth via **Email/Password (JWT)**.
 
 ---
 
@@ -17,7 +17,7 @@
 - **Alerts** — track new companies by city + sector + min capital (daily/weekly).
 - **Exports** — real **CSV**, **Excel** (sheet per city), **PDF** report files.
 - **Subscriptions** — Free / Starter (₹999) / Pro (₹2499) / Enterprise with plan-based access control + Razorpay Checkout and webhooks.
-- **Background jobs (APScheduler, IST)** — weekly ingest, enrichment worker (every 15 min), daily alert checker (08:00), weekly data-quality scorer.
+- **Background jobs (Celery + Redis, IST)** — weekly ingest, classification worker (every 15 min), daily alert checker (08:00), weekly data-quality scorer, and a manual-only guarded MCA enrichment queue.
 - **Polished UI** — navy `#1E3A5F` + saffron `#F4A620`, Inter + Sora, full **dark mode**, mobile-first, skeletons, toasts.
 
 ---
@@ -26,12 +26,15 @@
 
 ```
 backend/
-  server.py                # FastAPI app + startup (indexes, seed, scheduler)
+  server.py                # FastAPI app + startup (indexes, seed)
+  celery_app.py            # Celery queues, routes, beat schedule, failed-job logging
+  tasks/                   # ingestion, classification, alerts, quality scoring, manual enrichment
   models.py  db.py  auth_utils.py  common.py
   routers/                 # auth, companies, analytics, search, export, alerts, admin, payments
-  services/                # city_tagger, sample_data, ingestion, classifier, enrichment, scheduler, razorpay_service
+  services/                # city_tagger, sample_data, ingestion, classifier, enrichment, razorpay_service
   scripts/test_core.py     # POC test for the core pipeline
-frontend/src/
+frontend-next/src/
+  app/                     # Next.js App Router routes, metadata, sitemap, robots
   pages/                   # Landing, Login, Dashboard, Search, CompanyDetail, Analytics, Alerts, Export, Pricing, Settings
   components/              # CompanyCard, FilterSidebar, charts/, layout/, ...
   lib/api.js  context/AuthContext.js
@@ -48,6 +51,8 @@ docker-compose.yml  .env.example  deploy/nginx.conf
 cp .env.example .env        # fill values
 docker compose up --build   # frontend:3000, backend:8001, mongo, redis, nginx:80
 ```
+
+Flower is exposed at `http://localhost:5555` by default when the Docker stack is running.
 
 ### Seed the database (one-shot)
 ```bash
@@ -68,7 +73,10 @@ cd backend && python -m scripts.test_core   # exit 0 = all core checks pass
 | Variable | Purpose |
 |---|---|
 | `MONGO_URL`, `DB_NAME` | MongoDB connection |
-| `REACT_APP_BACKEND_URL` | Frontend → backend base (no trailing `/api`) |
+| `REDIS_URL` | Redis connection for app-level locks/cache |
+| `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` | Celery Redis broker/result backend |
+| `NEXT_PUBLIC_BACKEND_URL` | Next.js frontend → backend base (no trailing `/api`) |
+| `NEXT_PUBLIC_SITE_URL` | Public canonical site URL for metadata/sitemap |
 | `JWT_SECRET` | JWT signing |
 | `ALLOW_TEST_BYPASS` | Enables `/auth/demo-login` (set `false` in prod) |
 | `ANTHROPIC_API_KEY` | Claude classification (fallback used if empty) |

@@ -1,11 +1,6 @@
 # CorpIntel India - single-command stack for local and self-hosted deployment.
 #
-# The scheduler runs inside the backend image already, so the dedicated
-# `scheduler` service is an optional separate worker.
-#
 # Usage:  cp .env.example .env  &&  docker compose up --build
-
-version: "3.9"
 
 services:
   mongodb:
@@ -25,38 +20,100 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=${DB_NAME:-corpintel}
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
     depends_on:
       - mongodb
       - redis
     # ports:
     #   - "8001:8001"
 
-  # Optional dedicated scheduler worker (APScheduler also runs in backend).
-  scheduler:
+  celery-worker:
     build: ./backend
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=${DB_NAME:-corpintel}
       - REDIS_URL=redis://redis:6379/0
-      - RUN_SCHEDULER_ONLY=true
-    command: ["python", "-m", "scripts.seed"]
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+    command: ["celery", "-A", "celery_app", "worker", "--loglevel=info", "-Q", "ingestion,classification,alerts,quality_scoring"]
     depends_on:
       - mongodb
-      - backend
+      - redis
+
+  celery-enrichment-worker:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017
+      - DB_NAME=${DB_NAME:-corpintel}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+    command: ["celery", "-A", "celery_app", "worker", "--loglevel=info", "-Q", "enrichment", "--concurrency=1"]
+    depends_on:
+      - mongodb
+      - redis
+
+  celery-beat:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017
+      - DB_NAME=${DB_NAME:-corpintel}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+    command: ["celery", "-A", "celery_app", "beat", "--loglevel=info"]
+    depends_on:
+      - mongodb
+      - redis
+
+  flower:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017
+      - DB_NAME=${DB_NAME:-corpintel}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+    command: ["celery", "-A", "celery_app", "flower", "--port=5555"]
+    depends_on:
+      - redis
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
 
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend-next
       args:
-        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL}
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8001}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
     restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8001}
+      - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
     depends_on:
       - backend
     # ports:

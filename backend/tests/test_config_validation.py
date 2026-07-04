@@ -8,8 +8,14 @@ def _clear_payment_env(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
+def _clear_celery_env(monkeypatch):
+    for name in ("CELERY_BROKER_URL", "CELERY_RESULT_BACKEND"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_rejects_placeholder_jwt_secret(monkeypatch):
     _clear_payment_env(monkeypatch)
+    _clear_celery_env(monkeypatch)
     monkeypatch.setenv("JWT_SECRET", "replace-with-a-long-random-secret")
     with pytest.raises(RuntimeError, match="JWT_SECRET"):
         validate_runtime_config()
@@ -17,6 +23,7 @@ def test_rejects_placeholder_jwt_secret(monkeypatch):
 
 def test_allows_no_razorpay_config_for_non_payment_dev(monkeypatch):
     _clear_payment_env(monkeypatch)
+    _clear_celery_env(monkeypatch)
     monkeypatch.setenv("JWT_SECRET", "a-real-local-secret-value")
     monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("ALLOW_TEST_BYPASS", "false")
@@ -25,6 +32,7 @@ def test_allows_no_razorpay_config_for_non_payment_dev(monkeypatch):
 
 def test_rejects_partial_razorpay_config(monkeypatch):
     _clear_payment_env(monkeypatch)
+    _clear_celery_env(monkeypatch)
     monkeypatch.setenv("JWT_SECRET", "a-real-local-secret-value")
     monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_123")
     with pytest.raises(RuntimeError, match="Razorpay config is incomplete"):
@@ -32,9 +40,29 @@ def test_rejects_partial_razorpay_config(monkeypatch):
 
 
 def test_rejects_invalid_razorpay_key_id(monkeypatch):
+    _clear_celery_env(monkeypatch)
     monkeypatch.setenv("JWT_SECRET", "a-real-local-secret-value")
     monkeypatch.setenv("RAZORPAY_KEY_ID", "bad_key")
     monkeypatch.setenv("RAZORPAY_KEY_SECRET", "secret")
     monkeypatch.setenv("RAZORPAY_WEBHOOK_SECRET", "webhook_secret")
     with pytest.raises(RuntimeError, match="RAZORPAY_KEY_ID"):
+        validate_runtime_config()
+
+
+def test_rejects_invalid_celery_broker_url(monkeypatch):
+    _clear_payment_env(monkeypatch)
+    monkeypatch.setenv("JWT_SECRET", "a-real-local-secret-value")
+    monkeypatch.setenv("ENV", "development")
+    monkeypatch.setenv("CELERY_BROKER_URL", "amqp://rabbitmq")
+    with pytest.raises(RuntimeError, match="CELERY_BROKER_URL"):
+        validate_runtime_config()
+
+
+def test_requires_celery_broker_url_in_production(monkeypatch):
+    _clear_payment_env(monkeypatch)
+    _clear_celery_env(monkeypatch)
+    monkeypatch.setenv("JWT_SECRET", "a-real-local-secret-value")
+    monkeypatch.setenv("ENV", "production")
+    monkeypatch.setenv("ALLOW_TEST_BYPASS", "false")
+    with pytest.raises(RuntimeError, match="CELERY_BROKER_URL"):
         validate_runtime_config()

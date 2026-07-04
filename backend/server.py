@@ -153,11 +153,7 @@ async def on_startup():
             logger.info("No DATA_GOV_API_KEY -> seeding labeled SAMPLE dataset")
             await seed_from_sample(db, count=600)
     await _ensure_demo_user()
-    try:
-        from services.scheduler import start_scheduler
-        start_scheduler()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Scheduler failed to start: %s", e)
+    logger.info("Background jobs are handled by Celery worker/beat processes.")
     logger.info("CorpIntel India API startup complete.")
 
 

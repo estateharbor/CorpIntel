@@ -19,6 +19,23 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 ALLOW_TEST_BYPASS = os.getenv("ALLOW_TEST_BYPASS", "false").lower() == "true"
 
 
+def _cookie_secure() -> bool:
+    env = (os.getenv("ENV") or os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "").lower()
+    return env in {"prod", "production"}
+
+
+def _set_session_cookie(response: Response, token: str):
+    response.set_cookie(
+        "session_token",
+        token,
+        max_age=7 * 24 * 60 * 60,
+        httponly=True,
+        secure=_cookie_secure(),
+        samesite="lax",
+        path="/",
+    )
+
+
 def _public(user: dict) -> dict:
     return {
         "user_id": user["user_id"], "email": user["email"], "name": user.get("name", ""),
@@ -46,21 +63,23 @@ async def _new_user(email: str, name: str, *, provider: str, password: str | Non
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(payload: RegisterRequest):
+async def register(payload: RegisterRequest, response: Response):
     existing = await db.users.find_one({"email": payload.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     user = await _new_user(payload.email, payload.name, provider="email", password=payload.password)
     token = create_access_token(user["user_id"])
+    _set_session_cookie(response, token)
     return {"access_token": token, "token_type": "bearer", "user": _public(user)}
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: LoginRequest):
+async def login(payload: LoginRequest, response: Response):
     user = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0})
     if not user or not user.get("password_hash") or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(user["user_id"])
+    _set_session_cookie(response, token)
     return {"access_token": token, "token_type": "bearer", "user": _public(user)}
 
 
@@ -78,7 +97,7 @@ async def magic_link(payload: MagicLinkRequest):
 
 
 @router.post("/demo-login", response_model=TokenResponse)
-async def demo_login():
+async def demo_login(response: Response):
     """Test bypass: returns a JWT for a seeded Pro demo user.
 
     REMOVE / disable (set ALLOW_TEST_BYPASS=false) before production.
@@ -92,6 +111,7 @@ async def demo_login():
                                   {"$set": {"plan": "pro", "api_key": new_api_key()}})
         user = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
     token = create_access_token(user["user_id"])
+    _set_session_cookie(response, token)
     return {"access_token": token, "token_type": "bearer", "user": _public(user)}
 
 
