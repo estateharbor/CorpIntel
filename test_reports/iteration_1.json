@@ -24,7 +24,7 @@
     "Backend: CSV/Excel/PDF exports return real downloadable files (Pro user)",
     "Backend: Alerts CRUD (create, list, toggle, delete) working",
     "Backend: Admin stats and ingest/seed endpoints",
-    "Backend: Payment plans list and Stripe checkout session creation",
+    "Backend: Payment plans list and Razorpay order creation",
     "Frontend: Landing page loads with hero, company counter (600), CTAs",
     "Frontend: Login page with demo-login button working",
     "Frontend: Demo login redirects to dashboard",

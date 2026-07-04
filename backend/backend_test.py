@@ -619,18 +619,17 @@ class CorpIntelAPITester:
             return False
         
         success, response = self.run_test(
-            "Create Checkout Session",
+            "Create Razorpay Order",
             "POST",
             "/api/v1/payments/checkout",
             200,
             data={
-                "plan_id": "pro",
-                "origin_url": os.getenv("FRONTEND_ORIGIN_URL", "http://localhost:3000")
+                "plan_id": "pro"
             },
-            check_response=lambda r: 'url' in r and 'session_id' in r
+            check_response=lambda r: 'order_id' in r and 'key_id' in r and 'amount_paise' in r
         )
         if success:
-            self.log(f"   Checkout URL: {response.get('url', '')[:80]}...")
+            self.log(f"   Razorpay order: {response.get('order_id', '')}")
         return success
 
     # ===== RUN ALL TESTS =====

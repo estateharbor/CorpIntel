@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { createCheckout } from "@/lib/api";
+import { createCheckout, verifyRazorpayPayment } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 const TIERS = [
@@ -34,7 +34,7 @@ const FAQ = [
 ];
 
 export default function Pricing() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const navigate = useNavigate();
   const [busy, setBusy] = useState("");
 
@@ -45,10 +45,57 @@ export default function Pricing() {
     setBusy(tier);
     try {
       const res = await createCheckout(tier);
-      if (res.url) window.location.href = res.url;
+      await openRazorpayCheckout(res);
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Could not start checkout");
     } finally { setBusy(""); }
+  };
+
+  const loadRazorpay = () =>
+    new Promise((resolve, reject) => {
+      if (window.Razorpay) { resolve(); return; }
+      const existing = document.querySelector("script[data-razorpay-checkout]");
+      if (existing) {
+        existing.addEventListener("load", resolve, { once: true });
+        existing.addEventListener("error", reject, { once: true });
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.dataset.razorpayCheckout = "true";
+      script.onload = resolve;
+      script.onerror = reject;
+      document.body.appendChild(script);
+    });
+
+  const openRazorpayCheckout = async (order) => {
+    await loadRazorpay();
+    const options = {
+      key: order.key_id,
+      amount: order.amount_paise,
+      currency: order.currency,
+      name: "CorpIntel India",
+      description: order.description,
+      order_id: order.order_id,
+      prefill: order.prefill || {},
+      theme: { color: "#F4A620" },
+      handler: async (response) => {
+        try {
+          await verifyRazorpayPayment(response);
+          await refresh();
+          toast.success("Payment verified. Your plan has been upgraded.");
+          navigate("/settings");
+        } catch (err) {
+          toast.error(err?.response?.data?.detail || "Payment verification failed");
+        }
+      },
+      modal: {
+        ondismiss: () => toast.info("Payment cancelled"),
+      },
+    };
+    const checkout = new window.Razorpay(options);
+    checkout.open();
   };
 
   const cell = (v) => v === true ? <Check className="h-4 w-4 text-success mx-auto" /> : v === false ? <X className="h-4 w-4 text-muted-foreground mx-auto" /> : <span className="tabular-nums">{v}</span>;

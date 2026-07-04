@@ -74,9 +74,9 @@ export const purgeSampleData = () =>
 
 export const getPlans = () => api.get("/payments/plans").then((r) => r.data);
 export const createCheckout = (plan_id) =>
-  api.post("/payments/checkout", { plan_id, origin_url: window.location.origin }).then((r) => r.data);
-export const checkoutStatus = (sessionId) =>
-  api.get(`/payments/status/${sessionId}`).then((r) => r.data);
+  api.post("/payments/checkout", { plan_id }).then((r) => r.data);
+export const verifyRazorpayPayment = (body) =>
+  api.post("/payments/verify", body).then((r) => r.data);
 
 export const regenerateApiKey = () => api.post("/auth/api-key").then((r) => r.data);
 

@@ -2,7 +2,7 @@
 
 **India's most complete company intelligence platform** for the Mumbai Metropolitan Region (Mumbai · Navi Mumbai · Thane) — discover, analyze, track and export registered-company intelligence. Think *Zaubacorp meets Crunchbase meets a Bloomberg terminal* for Indian SME intelligence.
 
-> Built on **React + FastAPI + MongoDB** (shadcn/ui, Tailwind, Recharts, TanStack Query). AI sector classification via **Anthropic Claude**. Subscriptions via **Stripe**. Auth via **Email/Password (JWT)**.
+> Built on **React + FastAPI + MongoDB** (shadcn/ui, Tailwind, Recharts, TanStack Query). AI sector classification via **Anthropic Claude**. Subscriptions via **Razorpay**. Auth via **Email/Password (JWT)**.
 
 ---
 
@@ -16,7 +16,7 @@
 - **Analytics** — registration trends, city distribution, top sectors, capital distribution, area-density heatmap, sector table; per-city tabs.
 - **Alerts** — track new companies by city + sector + min capital (daily/weekly).
 - **Exports** — real **CSV**, **Excel** (sheet per city), **PDF** report files.
-- **Subscriptions** — Free / Starter (₹999) / Pro (₹2499) / Enterprise with plan-based access control + Stripe checkout & webhook.
+- **Subscriptions** — Free / Starter (₹999) / Pro (₹2499) / Enterprise with plan-based access control + Razorpay Checkout and webhooks.
 - **Background jobs (APScheduler, IST)** — weekly ingest, enrichment worker (every 15 min), daily alert checker (08:00), weekly data-quality scorer.
 - **Polished UI** — navy `#1E3A5F` + saffron `#F4A620`, Inter + Sora, full **dark mode**, mobile-first, skeletons, toasts.
 
@@ -29,7 +29,7 @@ backend/
   server.py                # FastAPI app + startup (indexes, seed, scheduler)
   models.py  db.py  auth_utils.py  common.py
   routers/                 # auth, companies, analytics, search, export, alerts, admin, payments
-  services/                # city_tagger, sample_data, ingestion, classifier, enrichment, scheduler, stripe_service
+  services/                # city_tagger, sample_data, ingestion, classifier, enrichment, scheduler, razorpay_service
   scripts/test_core.py     # POC test for the core pipeline
 frontend/src/
   pages/                   # Landing, Login, Dashboard, Search, CompanyDetail, Analytics, Alerts, Export, Pricing, Settings
@@ -72,7 +72,7 @@ cd backend && python -m scripts.test_core   # exit 0 = all core checks pass
 | `JWT_SECRET` | JWT signing |
 | `ALLOW_TEST_BYPASS` | Enables `/auth/demo-login` (set `false` in prod) |
 | `ANTHROPIC_API_KEY` | Claude classification (fallback used if empty) |
-| `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` / `STRIPE_WEBHOOK_SECRET` | Stripe (test/live) |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` | Razorpay Checkout and webhook verification |
 | `DATA_GOV_API_KEY` | Live data.gov.in ingestion |
 
 All variables are read via `os.getenv` (backend) / `process.env` (frontend). **No secrets are hardcoded.**
@@ -98,7 +98,7 @@ See `auth_testing.md` for detailed test instructions.
 
 ## API (base `/api/v1`)
 
-`auth/*` · `companies` (+`/{cin}`, `/directors`, `/charges`, `/filings`, `/contact`, `/similar`) · `analytics/{summary,trends,sectors,capital,heatmap}` · `search` (+`/advanced`, `/save`, `/saved`) · `export/{csv,excel,pdf}` · `alerts` · `admin/{stats,ingest/seed,ingest/incremental,enrich/{cin}}` · `payments/{plans,checkout,status}` · webhook at `/api/webhook/stripe`.
+`auth/*` · `companies` (+`/{cin}`, `/directors`, `/charges`, `/filings`, `/contact`, `/similar`) · `analytics/{summary,trends,sectors,capital,heatmap}` · `search` (+`/advanced`, `/save`, `/saved`) · `export/{csv,excel,pdf}` · `alerts` · `admin/{stats,ingest/seed,ingest/incremental,enrich/{cin}}` · `payments/{plans,checkout,verify}` · webhook at `/api/webhook/razorpay`.
 
 ---
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -50,28 +51,48 @@ async def health():
         "sample_mode": sample_mode,
         "datagovin_configured": DataGovInClient().configured,
         "anthropic_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
-        "stripe_configured": bool(os.getenv("STRIPE_SECRET_KEY") or os.getenv("STRIPE_API_KEY")),
+        "razorpay_configured": bool(os.getenv("RAZORPAY_KEY_ID") and os.getenv("RAZORPAY_KEY_SECRET")),
     }
 
 
-# Stripe webhook MUST live at exactly /api/webhook/stripe
+# Razorpay webhook MUST use the raw request body for signature verification.
 webhook_router = APIRouter(prefix="/api")
 
 
-@webhook_router.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    from services.stripe_service import handle_webhook_event
-    from routers.payments import _apply_paid, _webhook_url
+@webhook_router.post("/webhook/razorpay")
+async def razorpay_webhook(request: Request):
+    import json
+    from services.razorpay_service import normalize_webhook_event, verify_webhook_signature
+    from routers.payments import _apply_cancelled, _apply_paid, _mark_payment_status
     body = await request.body()
-    signature = request.headers.get("Stripe-Signature", "")
+    signature = request.headers.get("X-Razorpay-Signature", "")
     try:
-        event = await handle_webhook_event(body=body, signature=signature,
-                                           webhook_url=_webhook_url(request))
+        verify_webhook_signature(body=body, signature=signature)
+        event = normalize_webhook_event(json.loads(body.decode("utf-8")))
     except Exception as e:  # noqa: BLE001
-        logger.warning("Stripe webhook error: %s", e)
+        logger.warning("Razorpay webhook error: %s", e)
         return {"received": False, "error": str(e)}
-    if event.get("payment_status") == "paid" and event.get("session_id"):
-        await _apply_paid(event["session_id"], event.get("metadata", {}))
+
+    event_id = event.get("event_id")
+    if event_id:
+        inserted = await db.processed_webhook_events.update_one(
+            {"event_id": event_id, "provider": "razorpay"},
+            {"$setOnInsert": {"event_id": event_id, "provider": "razorpay",
+                              "event_type": event.get("event_type"),
+                              "created_at": datetime.now(timezone.utc)}},
+            upsert=True,
+        )
+        if inserted.matched_count:
+            return {"received": True, "duplicate": True, "event_type": event.get("event_type")}
+
+    order_id = event.get("order_id")
+    status = event.get("payment_status")
+    if status == "paid" and order_id:
+        await _apply_paid(order_id, event.get("metadata", {}), payment_id=event.get("payment_id"))
+    elif status in {"failed", "halted"} and order_id:
+        await _mark_payment_status(order_id, status, payment_id=event.get("payment_id"))
+    elif status == "cancelled":
+        await _apply_cancelled(order_id, event.get("metadata", {}))
     return {"received": True, "event_type": event.get("event_type")}
 
 

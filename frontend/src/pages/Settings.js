@@ -1,56 +1,28 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Copy, RefreshCw, Eye, EyeOff, KeyRound, CreditCard, Bookmark, Bell, Loader2 } from "lucide-react";
+import { Copy, RefreshCw, Eye, EyeOff, KeyRound, CreditCard, Bookmark, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { listSaved, listAlerts, regenerateApiKey, checkoutStatus } from "@/lib/api";
+import { listSaved, listAlerts, regenerateApiKey } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { formatNumber } from "@/lib/format";
 
 const EXPORT_LIMITS = { free: 0, starter: 50, pro: -1, enterprise: -1 };
 
 export default function Settings() {
-  const { user, refresh } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
   const [revealKey, setRevealKey] = useState(false);
   const [apiKey, setApiKey] = useState(user?.api_key || "");
   const [regen, setRegen] = useState(false);
-  const [verifying, setVerifying] = useState(false);
 
   const { data: saved } = useQuery({ queryKey: ["saved"], queryFn: listSaved });
   const { data: alerts } = useQuery({ queryKey: ["alerts-settings"], queryFn: listAlerts });
-
-  // Handle Stripe checkout return
-  useEffect(() => {
-    const sessionId = params.get("session_id");
-    if (!sessionId) return;
-    let attempts = 0;
-    setVerifying(true);
-    const poll = async () => {
-      try {
-        const res = await checkoutStatus(sessionId);
-        if (res.payment_status === "paid") {
-          await refresh();
-          toast.success("Payment successful — your plan has been upgraded!");
-          setVerifying(false);
-          setParams({}, { replace: true });
-          return;
-        }
-        if (res.status === "expired") { toast.error("Payment session expired"); setVerifying(false); setParams({}, { replace: true }); return; }
-      } catch (e) { /* ignore */ }
-      attempts += 1;
-      if (attempts < 6) setTimeout(poll, 2000);
-      else { setVerifying(false); setParams({}, { replace: true }); }
-    };
-    poll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const copyKey = () => { navigator.clipboard.writeText(apiKey || ""); toast.success("API key copied"); };
   const doRegen = async () => {
@@ -71,12 +43,6 @@ export default function Settings() {
         <h1 className="font-heading text-2xl font-bold">Settings</h1>
         <p className="text-sm text-muted-foreground">Manage your account, plan and integrations</p>
       </div>
-
-      {verifying && (
-        <Card className="p-4 flex items-center gap-2 border-accent/40">
-          <Loader2 className="h-4 w-4 animate-spin text-accent" /> Verifying your payment…
-        </Card>
-      )}
 
       <div className="grid lg:grid-cols-2 gap-6">
         <Card className="p-6" data-testid="settings-account-card">

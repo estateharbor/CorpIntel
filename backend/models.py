@@ -194,12 +194,23 @@ class ExportRequest(BaseModel):
 # ---------------- Payments ----------------
 class CheckoutRequest(BaseModel):
     plan_id: str  # starter | pro
-    origin_url: str
 
 
 class CheckoutResponse(BaseModel):
-    url: str
-    session_id: str
+    order_id: str
+    amount: float
+    amount_paise: int
+    currency: str
+    key_id: str
+    name: str
+    description: str
+    prefill: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PaymentVerifyRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
 
 
 TokenResponse.model_rebuild()
