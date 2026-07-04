@@ -1,0 +1,32 @@
+{
+  "branch": "phase-4c-responsive-breakpoints",
+  "checkedAt": "2026-07-04T10:19:36.762Z",
+  "appUrl": "http://localhost:3000",
+  "widths": [
+    320,
+    390,
+    480,
+    640,
+    768,
+    1024,
+    1280,
+    1536
+  ],
+  "paths": [
+    "/",
+    "/dashboard",
+    "/search",
+    "/analytics",
+    "/pricing",
+    "/alerts",
+    "/export",
+    "/settings",
+    "/admin/enrichment"
+  ],
+  "result": "pass",
+  "checks": {
+    "horizontalOverflow": "document/body scrollWidth <= viewport width",
+    "consoleErrors": "filtered expected backend ERR_CONNECTION_REFUSED because backend was not running"
+  },
+  "failures": []
+}

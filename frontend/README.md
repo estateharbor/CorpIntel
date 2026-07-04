@@ -68,3 +68,21 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 ### `npm run build` fails to minify
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+
+## Responsive Breakpoints
+
+CorpIntel uses Tailwind's default breakpoints plus two intentionally smaller mobile breakpoints:
+
+| Alias | Width | Intent |
+|---|---:|---|
+| `mb` | `390px` | Small-phone refinements above the narrowest 320-389px base layout |
+| `xs` | `480px` | Large-phone refinements before Tailwind's default `sm` breakpoint |
+| `sm` | `640px` | Tailwind default |
+| `md` | `768px` | Tailwind default |
+| `lg` | `1024px` | Tailwind default |
+| `xl` | `1280px` | Tailwind default |
+| `2xl` | `1536px` | Tailwind default |
+
+Base, unprefixed classes must remain usable down to 320px. Add `mb:` or `xs:` only when the 390-639px range needs a layout that is more capable than the narrowest phone layout but not ready for `sm:`.
+
+When adding responsive classes, use this table as the source of truth. The full `screens` object lives in `tailwind.config.js` to keep generated media query order deterministic.

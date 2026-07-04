@@ -97,7 +97,7 @@ export default function SearchPage() {
                   <SlidersHorizontal className="mr-2 h-4 w-4" /> Filters
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[300px] overflow-y-auto">
+              <SheetContent side="left" className="w-[min(100vw_-_2rem,320px)] overflow-y-auto">
                 <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
                 <div className="mt-4"><FilterSidebar value={filters} onChange={patch} onReset={reset} /></div>
               </SheetContent>
@@ -106,9 +106,9 @@ export default function SearchPage() {
               {isLoading ? "Loading…" : `${formatNumber(total)} companies`}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="grid w-full grid-cols-1 gap-2 xs:grid-cols-2 xl:w-auto xl:flex xl:items-center">
             <Select value={filters.entity_type} onValueChange={(v) => patch({ entity_type: v })}>
-              <SelectTrigger className="h-9 w-[130px]" data-testid="search-entity-type-select"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 w-full xl:w-[130px]" data-testid="search-entity-type-select"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="All">All types</SelectItem>
                 <SelectItem value="Company">Companies</SelectItem>
@@ -116,17 +116,17 @@ export default function SearchPage() {
               </SelectContent>
             </Select>
             <Select value={sortBy} onValueChange={(v) => { setSortBy(v); setPage(1); }}>
-              <SelectTrigger className="h-9 w-[180px]" data-testid="search-sort-select"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 w-full xl:w-[180px]" data-testid="search-sort-select"><SelectValue /></SelectTrigger>
               <SelectContent>{SORT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={order} onValueChange={(v) => { setOrder(v); setPage(1); }}>
-              <SelectTrigger className="h-9 w-[120px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 w-full xl:w-[120px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="desc">Descending</SelectItem>
                 <SelectItem value="asc">Ascending</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" className="h-9" onClick={onSave} data-testid="search-save-search-button">
+            <Button variant="outline" className="h-9 w-full xl:w-auto" onClick={onSave} data-testid="search-save-search-button">
               <Bookmark className="mr-2 h-4 w-4" /> Save
             </Button>
           </div>

@@ -107,7 +107,7 @@ export default function Pricing() {
         <p className="mt-2 text-muted-foreground">Start free. Upgrade when you need exports, contact data and API access.</p>
       </div>
 
-      <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-5">
+      <div className="grid xs:grid-cols-2 xl:grid-cols-4 gap-5">
         {TIERS.map((t) => (
           <Card key={t.id} className={`p-6 flex flex-col ${t.highlight ? "border-accent ring-1 ring-accent/40" : ""}`} data-testid={`pricing-tier-${t.id}`}>
             {t.highlight && <Badge className="bg-accent text-accent-foreground w-fit mb-2"><Sparkles className="h-3 w-3 mr-1" /> Most popular</Badge>}

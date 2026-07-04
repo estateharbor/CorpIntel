@@ -1,0 +1,17 @@
+Responsive breakpoint audit for phase-4c-responsive-breakpoints
+
+Inventory command:
+rg -o "\b(sm|md|lg|xl|2xl):[A-Za-z0-9_\[\]/.:-]+" frontend/src -g '*.{js,jsx,ts,tsx}' | sed 's/.*://' | sort | uniq -c | sort -rn
+
+Summary:
+- Existing `sm` through `2xl` behavior is preserved because their values match Tailwind defaults.
+- New `mb`/`xs` styles were added only where base mobile styles were too narrow or too coarse for 390-639px.
+- Existing table usage already had an overflow wrapper; the shared table primitive now uses `min-w-max` so dense rows scroll instead of compressing unreadably.
+
+Reviewed categories:
+- Navigation/header/sidebar: added `mb`/`xs` spacing and constrained mobile sheet widths.
+- Search/filter UI: converted mobile sort/action controls to a one-column base and two-column `xs` grid, returning to inline controls at `md`.
+- Entity detail pages: improved header wrapping, identifier breaking, capital alignment, and `mb` grids for overview/contact cards.
+- Analytics/dashboard charts: tightened card padding on narrow phones and added `mb`/`xs` grid steps for entity tiles and heatmap density cards.
+- Manual enrichment dashboard: improved KPI grids, command rows, progress labels, and governance rows across 320-639px.
+- Alerts/export/pricing: added `xs` two-column/form/action transitions and full-width mobile actions where tap targets need room.

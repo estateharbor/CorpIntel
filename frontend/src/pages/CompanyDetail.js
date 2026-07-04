@@ -74,15 +74,15 @@ export default function CompanyDetail() {
       <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="-ml-2"><ArrowLeft className="mr-1 h-4 w-4" /> Back</Button>
 
       {/* Header */}
-      <Card className="p-6">
+      <Card className="p-4 xs:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
+          <div className="flex min-w-0 items-start gap-3 xs:gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
               {isLLP ? <Users className="h-6 w-6" /> : <Building2 className="h-6 w-6" />}
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="font-heading text-2xl font-bold leading-tight" data-testid="company-header-name">{company.name}</h1>
-              <div className="mt-1 font-mono text-xs text-muted-foreground" data-testid="company-header-identifier">{company.identifier || company.cin}</div>
+              <div className="mt-1 font-mono text-xs text-muted-foreground break-all" data-testid="company-header-identifier">{company.identifier || company.cin}</div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <EntityBadge type={company.entity_type} />
                 <StatusBadge status={company.status} />
@@ -92,9 +92,9 @@ export default function CompanyDetail() {
               </div>
             </div>
           </div>
-          <div className="text-right">
+          <div className="w-full mb:w-auto mb:text-right">
             <div className="text-xs text-muted-foreground">{isLLP ? "Total contribution" : "Paid-up capital"}</div>
-            <div className="font-heading text-2xl font-bold tabular-nums" data-testid="company-header-capital">
+            <div className="font-heading text-xl xs:text-2xl font-bold tabular-nums" data-testid="company-header-capital">
               {formatINR(isLLP && company.total_contribution != null ? company.total_contribution : company.paid_up_capital)}
             </div>
             <div className="text-xs text-muted-foreground mt-1">Data quality {company.data_quality_score}/100</div>
@@ -113,8 +113,8 @@ export default function CompanyDetail() {
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
-          <Card className="p-6">
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <Card className="p-4 xs:p-6">
+            <div className="grid mb:grid-cols-2 lg:grid-cols-3 gap-5">
               <Stat icon={Hash} label={isLLP ? "LLPIN" : "CIN"} value={company.identifier || company.cin} />
               <Stat icon={Landmark} label="ROC" value={company.roc} />
               <Stat icon={Briefcase} label={isLLP ? "Entity type" : "Company class"} value={isLLP ? "LLP" : company.company_class} />
@@ -208,7 +208,7 @@ export default function CompanyDetail() {
         </TabsContent>
 
         <TabsContent value="contact" className="mt-4">
-          <Card className="p-6">
+          <Card className="p-4 xs:p-6">
             {!contact ? <Skeleton className="h-32 w-full" /> : contact.locked ? (
               <div className="text-center py-8">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted"><Lock className="h-5 w-5 text-muted-foreground" /></div>
@@ -217,7 +217,7 @@ export default function CompanyDetail() {
                 <Button asChild className="mt-4 bg-accent text-accent-foreground hover:brightness-95"><Link to="/pricing">Upgrade to Pro</Link></Button>
               </div>
             ) : (
-              <div className="grid sm:grid-cols-2 gap-5">
+              <div className="grid mb:grid-cols-2 gap-5">
                 <Stat icon={Hash} label="GSTIN" value={contact.gstin} />
                 <Stat icon={Phone} label="Phone" value={contact.phone} />
                 <Stat icon={Mail} label="Email" value={contact.email} />

@@ -56,10 +56,11 @@ export function QuickSearch({ variant = "button" }) {
         variant="outline"
         onClick={() => setOpen(true)}
         data-testid="topbar-quick-search"
-        className="h-10 justify-start gap-2 text-muted-foreground w-full max-w-md bg-background"
+        className="h-10 min-w-0 justify-start gap-2 text-muted-foreground w-full max-w-md bg-background px-2 mb:px-3"
       >
         <Search className="h-4 w-4" />
-        <span className="text-sm">Search companies, CIN, sector…</span>
+        <span className="hidden xs:inline truncate text-sm">Search companies, CIN, sector…</span>
+        <span className="xs:hidden truncate text-sm">Search</span>
         <kbd className="ml-auto hidden sm:inline-flex items-center rounded border bg-muted px-1.5 text-[10px] font-mono">
           ⌘K
         </kbd>

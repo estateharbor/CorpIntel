@@ -16,7 +16,7 @@ export function CompanyCard({ company }) {
       data-testid="company-card"
       className="group p-4 transition-shadow transition-colors duration-150 hover:shadow-soft hover:border-accent/40"
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col mb:flex-row mb:items-start mb:justify-between gap-2 mb:gap-3">
         <Link
           to={`/company/${id}`}
           className="min-w-0 font-heading font-semibold text-[15px] leading-snug hover:text-accent transition-colors"
@@ -24,7 +24,7 @@ export function CompanyCard({ company }) {
         >
           {c.name}
         </Link>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 mb:shrink-0">
           <EntityBadge type={c.entity_type} />
           <StatusBadge status={c.status} />
         </div>
@@ -36,7 +36,7 @@ export function CompanyCard({ company }) {
         <SectorChip sector={c.sector} />
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+      <div className="mt-4 grid grid-cols-1 mb:grid-cols-2 gap-3 text-sm">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Calendar className="h-4 w-4" />
           <span className="text-foreground">{formatDate(c.date_of_incorporation)}</span>
@@ -59,8 +59,8 @@ export function CompanyCard({ company }) {
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{c.company_class}</span>
+      <div className="mt-4 pt-3 border-t flex flex-col mb:flex-row mb:items-center mb:justify-between gap-2">
+        <span className="text-xs text-muted-foreground truncate">{c.company_class}</span>
         <Link
           to={`/company/${id}`}
           data-testid="company-card-view"

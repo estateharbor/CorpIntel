@@ -34,18 +34,18 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-background">
       {/* Nav */}
-      <header className="flex items-center justify-between px-4 sm:px-8 h-16 border-b">
-        <div className="flex items-center gap-2.5">
+      <header className="flex items-center justify-between gap-2 px-3 mb:px-4 sm:px-8 h-16 border-b">
+        <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Building2 className="h-5 w-5" />
           </div>
-          <span className="font-heading font-bold text-lg">CorpIntel India</span>
+          <span className="truncate font-heading font-bold text-base mb:text-lg">CorpIntel India</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1 mb:gap-2">
           <ThemeToggle />
           <Button variant="ghost" asChild className="hidden sm:inline-flex"><Link to="/pricing">Pricing</Link></Button>
-          <Button variant="ghost" asChild><Link to="/login" data-testid="landing-signin">Sign in</Link></Button>
-          <Button asChild className="bg-accent text-accent-foreground hover:brightness-95">
+          <Button variant="ghost" asChild className="hidden mb:inline-flex px-2 mb:px-3"><Link to="/login" data-testid="landing-signin">Sign in</Link></Button>
+          <Button asChild className="bg-accent text-accent-foreground hover:brightness-95 px-2 mb:px-3">
             <Link to="/dashboard" data-testid="landing-launch-app">Launch app</Link>
           </Button>
         </div>

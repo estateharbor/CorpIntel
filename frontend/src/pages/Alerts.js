@@ -84,7 +84,7 @@ export default function Alerts() {
                 {sectorOptions.map((s) => <Chip key={s} active={sectors.includes(s)} onClick={() => toggle(sectors, setSectors, s)}>{s}</Chip>)}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Min paid-up capital (₹)</Label>
                 <Input type="number" value={minCapital} onChange={(e) => setMinCapital(e.target.value)} placeholder="0" />
@@ -116,7 +116,7 @@ export default function Alerts() {
           ) : (
             <div className="space-y-3">
               {alerts.map((a) => (
-                <div key={a.id} className="flex items-center gap-3 rounded-lg border p-3">
+                <div key={a.id} className="flex flex-col items-start gap-3 rounded-lg border p-3 xs:flex-row xs:items-center">
                   <div className="min-w-0 flex-1">
                     <div className="font-medium truncate">{a.name}</div>
                     <div className="mt-1 flex flex-wrap gap-1.5">
@@ -127,8 +127,10 @@ export default function Alerts() {
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">{a.match_count || 0} matches tracked</div>
                   </div>
-                  <Switch checked={a.active !== false} onCheckedChange={() => flip(a.id)} data-testid={`alert-toggle-${a.id}`} />
-                  <Button variant="ghost" size="icon" onClick={() => remove(a.id)} data-testid={`alert-delete-${a.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                  <div className="flex w-full items-center justify-end gap-2 xs:w-auto">
+                    <Switch checked={a.active !== false} onCheckedChange={() => flip(a.id)} data-testid={`alert-toggle-${a.id}`} />
+                    <Button variant="ghost" size="icon" onClick={() => remove(a.id)} data-testid={`alert-delete-${a.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -84,7 +84,7 @@ export default function ExportPage() {
           {FORMATS.map((f) => {
             const Icon = f.icon;
             return (
-              <Card key={f.id} className="p-5 flex items-center justify-between gap-4">
+              <Card key={f.id} className="p-4 xs:p-5 flex flex-col items-start justify-between gap-4 xs:flex-row xs:items-center">
                 <div className="flex items-center gap-4">
                   <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary dark:bg-white/5 dark:text-foreground">
                     <Icon className="h-5 w-5" />
@@ -94,7 +94,7 @@ export default function ExportPage() {
                     <div className="text-sm text-muted-foreground">{f.desc}</div>
                   </div>
                 </div>
-                <Button onClick={() => doExport(f.id)} disabled={!!busy || limit === 0} data-testid={f.testid}>
+                <Button className="w-full xs:w-auto" onClick={() => doExport(f.id)} disabled={!!busy || limit === 0} data-testid={f.testid}>
                   {busy === f.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Download"}
                 </Button>
               </Card>

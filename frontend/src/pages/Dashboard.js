@@ -48,7 +48,7 @@ export default function Dashboard() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 mb:grid-cols-2 lg:grid-cols-4 gap-4">
         {ls ? (
           Array.from({ length: 4 }).map((_, i) => <KpiSkeleton key={i} />)
         ) : (
@@ -63,21 +63,21 @@ export default function Dashboard() {
 
       {/* Charts */}
       <div className="grid lg:grid-cols-3 gap-4">
-        <Card className="p-5 lg:col-span-2" data-testid="dashboard-chart-registrations-trend">
+        <Card className="p-4 xs:p-5 lg:col-span-2" data-testid="dashboard-chart-registrations-trend">
           <h3 className="font-heading text-sm font-semibold mb-4">New registrations (last 12 months)</h3>
           {lt ? <ChartSkeleton /> : <RegistrationTrend data={trends?.trends || []} />}
         </Card>
-        <Card className="p-5" data-testid="dashboard-chart-city-distribution">
+        <Card className="p-4 xs:p-5" data-testid="dashboard-chart-city-distribution">
           <h3 className="font-heading text-sm font-semibold mb-4">City distribution</h3>
           {ls ? <ChartSkeleton /> : <CityDistribution byCity={summary?.by_city || {}} />}
         </Card>
       </div>
       <div className="grid lg:grid-cols-2 gap-4">
-        <Card className="p-5">
+        <Card className="p-4 xs:p-5">
           <h3 className="font-heading text-sm font-semibold mb-4">Top 10 sectors</h3>
           {lsec ? <ChartSkeleton /> : <SectorBreakdown data={sectors?.sectors || []} height={340} />}
         </Card>
-        <Card className="p-5">
+        <Card className="p-4 xs:p-5">
           <h3 className="font-heading text-sm font-semibold mb-4">Paid-up capital distribution</h3>
           {lc ? <ChartSkeleton /> : <CapitalDistribution data={capital?.distribution || []} />}
         </Card>
@@ -96,7 +96,7 @@ export default function Dashboard() {
                 <div className="truncate text-sm font-medium">{c.name}</div>
                 <div className="truncate text-xs text-muted-foreground">{c.city} · {c.sector} · {formatDate(c.date_of_incorporation)}</div>
               </div>
-              <span className="hidden sm:block text-xs text-muted-foreground tabular-nums">{formatINR(c.paid_up_capital)}</span>
+              <span className="hidden xs:block text-xs text-muted-foreground tabular-nums">{formatINR(c.paid_up_capital)}</span>
               <StatusBadge status={c.status} />
             </Link>
           ))}

@@ -17,7 +17,7 @@ export function Topbar({ onMenuClick }) {
   const initials = (user?.name || user?.email || "U").slice(0, 2).toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-topbar px-4 sm:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-2 mb:gap-3 border-b bg-topbar px-2 mb:px-4 sm:px-6">
       <Button
         variant="ghost"
         size="icon"
@@ -29,11 +29,11 @@ export function Topbar({ onMenuClick }) {
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="flex-1 flex justify-start">
+      <div className="flex-1 min-w-0 flex justify-start">
         <QuickSearch />
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1 mb:gap-1.5">
         <ThemeToggle />
         {user ? (
           <DropdownMenu>
@@ -61,7 +61,7 @@ export function Topbar({ onMenuClick }) {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button asChild className="bg-accent text-accent-foreground hover:brightness-95" data-testid="topbar-signin">
+          <Button asChild className="bg-accent text-accent-foreground hover:brightness-95 px-2 mb:px-3" data-testid="topbar-signin">
             <Link to="/login">Sign in</Link>
           </Button>
         )}

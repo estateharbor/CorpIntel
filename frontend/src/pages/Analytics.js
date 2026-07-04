@@ -36,24 +36,24 @@ export default function Analytics() {
           <h1 className="font-heading text-2xl font-bold">Analytics</h1>
           <p className="text-sm text-muted-foreground">Market intelligence across the Mumbai Metropolitan Region</p>
         </div>
-        <Tabs value={city} onValueChange={setCity} data-testid="analytics-city-tabs">
-          <TabsList>
+        <Tabs value={city} onValueChange={setCity} data-testid="analytics-city-tabs" className="w-full sm:w-auto overflow-x-auto">
+          <TabsList className="min-w-max">
             {CITY_TABS.map((c) => <TabsTrigger key={c} value={c} data-testid={`analytics-city-${c.replace(/\s/g, '-').toLowerCase()}`}>{c}</TabsTrigger>)}
           </TabsList>
         </Tabs>
       </div>
 
-      <Card className="p-5" data-testid="analytics-trend-chart">
+      <Card className="p-4 xs:p-5" data-testid="analytics-trend-chart">
         <h3 className="font-heading text-sm font-semibold mb-4">Monthly new registrations (last 24 months)</h3>
         {lt ? <ChartSkeleton h={320} /> : <RegistrationTrend data={trends?.trends || []} height={320} />}
       </Card>
 
       {/* Company vs LLP breakdown */}
-      <Card className="p-5" data-testid="analytics-entity-breakdown">
+      <Card className="p-4 xs:p-5" data-testid="analytics-entity-breakdown">
         <h3 className="font-heading text-sm font-semibold mb-4">Company vs LLP</h3>
         {lsum ? <ChartSkeleton h={120} /> : (
           <>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 mb:grid-cols-2 gap-3 xs:gap-4">
               <div className="rounded-lg border p-4" data-testid="analytics-companies-tile">
                 <div className="flex items-center gap-2 text-[hsl(199_78%_36%)]">
                   <Building2 className="h-4 w-4" />
@@ -80,21 +80,21 @@ export default function Analytics() {
       </Card>
 
       <div className="grid lg:grid-cols-2 gap-4">
-        <Card className="p-5" data-testid="analytics-sectors-bar">
+        <Card className="p-4 xs:p-5" data-testid="analytics-sectors-bar">
           <h3 className="font-heading text-sm font-semibold mb-4">Top sectors</h3>
           {ls ? <ChartSkeleton h={400} /> : <SectorBreakdown data={sectors?.sectors || []} height={420} />}
         </Card>
-        <Card className="p-5">
+        <Card className="p-4 xs:p-5">
           <h3 className="font-heading text-sm font-semibold mb-4">Paid-up capital distribution</h3>
           {lc ? <ChartSkeleton h={400} /> : <CapitalDistribution data={capital?.distribution || []} height={420} />}
         </Card>
       </div>
 
       {/* Heatmap */}
-      <Card className="p-5" data-testid="analytics-heatmap">
+      <Card className="p-4 xs:p-5" data-testid="analytics-heatmap">
         <h3 className="font-heading text-sm font-semibold mb-4">Area-wise company density</h3>
         {lh ? <ChartSkeleton h={180} /> : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 mb:grid-cols-2 xs:grid-cols-3 lg:grid-cols-4 gap-2">
             {(heatmap?.heatmap || []).slice(0, 24).map((h, i) => {
               const intensity = 0.12 + (h.count / maxArea) * 0.7;
               return (

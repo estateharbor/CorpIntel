@@ -95,14 +95,14 @@ function CommandRow({ label, command, testid }) {
       <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
         <Terminal className="h-3.5 w-3.5" /> {label}
       </div>
-      <div className="flex items-stretch gap-2">
+      <div className="flex flex-col items-stretch gap-2 xs:flex-row">
         <code className="flex-1 min-w-0 overflow-x-auto rounded-lg border bg-[hsl(214_55%_10%)] px-3 py-2.5 font-mono text-xs text-[hsl(210_40%_92%)] whitespace-pre">
           {command}
         </code>
         <Button
           variant="outline"
           size="icon"
-          className="shrink-0"
+          className="shrink-0 self-end xs:self-auto"
           onClick={copy}
           aria-label={`Copy ${label}`}
           data-testid={testid}
@@ -166,7 +166,7 @@ export default function AdminEnrichment() {
             Human-in-the-loop batch runner · {data?.cohort_description || "priority cohort"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
           <Badge variant="secondary" className="gap-1.5">
             <ShieldCheck className="h-3.5 w-3.5 text-[hsl(152_55%_36%)]" />
             Auto-scraping disabled
@@ -212,7 +212,7 @@ export default function AdminEnrichment() {
       )}
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 mb:grid-cols-2 lg:grid-cols-4 gap-4">
         {isLoading ? (
           <>
             <KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton />
@@ -245,7 +245,7 @@ export default function AdminEnrichment() {
       </div>
 
       {/* Progress */}
-      <Card className="p-5" data-testid={T.progressBar}>
+      <Card className="p-4 xs:p-5" data-testid={T.progressBar}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-heading text-sm font-semibold">Enrichment progress</h3>
           <span className="text-sm font-medium tabular-nums">{p?.progress_pct ?? 0}%</span>
@@ -255,7 +255,7 @@ export default function AdminEnrichment() {
         ) : (
           <>
             <Progress value={p?.progress_pct || 0} className="h-3" />
-            <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+            <div className="mt-2 flex flex-col gap-1 mb:flex-row mb:justify-between text-xs text-muted-foreground">
               <span>{formatNumber(p?.enriched)} enriched</span>
               <span>{formatNumber(p?.remaining)} remaining</span>
             </div>
@@ -409,7 +409,7 @@ export default function AdminEnrichment() {
 }
 
 const Row = ({ label, value }) => (
-  <div className="flex items-center justify-between">
+  <div className="flex flex-col gap-0.5 mb:flex-row mb:items-center mb:justify-between">
     <span className="text-muted-foreground">{label}</span>
     <span className="font-medium tabular-nums">{value}</span>
   </div>
